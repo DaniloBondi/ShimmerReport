@@ -1,129 +1,254 @@
+from shiny import App, render, ui, reactive
 import numpy as np
 import pandas as pd
 import neurokit2 as nk
 from matplotlib import pyplot as plt
 from scipy.signal import find_peaks
+import io
 
-# ==========================================
-# 1. CARICAMENTO E PREPARAZIONE DATI
-# ==========================================
-
-# Assumendo che il file SHIMMER si chiami "FILE.csv"
-df = pd.read_csv("FILE.csv", sep='\t', skiprows=2)
-
-sampling_rate = 51.2
-# Rimuovi i primi e gli ultimi 10 secondi per evitare artefatti di stabilizzazione
-samples_to_remove = int(10 * sampling_rate)
-
-
-# ==========================================
-# 2. ANALISI EDA (Electrodermal Activity)
-# ==========================================
-
-gsr_signal = df.iloc[:, 3].astype(float).values
-processed_gsr_signal = gsr_signal[samples_to_remove : -samples_to_remove]
-
-# Processa l'EDA con NeuroKit2
-eda_signals, eda_info = nk.eda_process(processed_gsr_signal, sampling_rate=sampling_rate)
-
-# Estrazione delle metriche EDA
-n_peaks = len(eda_info.get("SCR_Peaks", []))
-mean_amplitude = np.nanmean(eda_info.get("SCR_Amplitude", [0]))
-mean_risetime = np.nanmean(eda_info.get("SCR_RiseTime", [0]))
-mean_recovery = np.nanmean(eda_info.get("SCR_RecoveryTime", [0]))
-
-# NUOVO: Calcolo SCL (Skin Conductance Level - Media della componente Tonica)
-mean_scl = np.mean(eda_signals['EDA_Tonic'])
-
-# NUOVO: Calcolo SCR/min (Frequenza dei picchi fasici al minuto)
-duration_minutes_eda = len(processed_gsr_signal) / sampling_rate / 60
-scr_per_min = n_peaks / duration_minutes_eda if duration_minutes_eda > 0 else 0
-
-print("--- METRICHE EDA ---")
-print(f"Livello Tonico Medio (SCL): {mean_scl:.3f} μS")
-print(f"Frequenza Picchi (SCR/min): {scr_per_min:.2f} picchi/min")
-print(f"Numero totale picchi SCR: {n_peaks}")
-print(f"Ampiezza media SCR: {mean_amplitude:.3f} μS")
-print(f"Rise Time medio: {mean_risetime:.3f} s")
-print(f"Half-Recovery Time medio: {mean_recovery:.3f} s\n")
-
-# Plot nativo EDA di NeuroKit2
-nk.eda_plot(eda_signals, eda_info)
-plt.subplots_adjust(hspace=0.5)
-plt.show()
-
-
-# ==========================================
-# 3. ANALISI PPG E FREQUENZA CARDIACA
-# ==========================================
-
-ppg_signal = df.iloc[:, 5].astype(float).values
-processed_ppg_signal = ppg_signal[samples_to_remove : -samples_to_remove]
-
-# NUOVO: Verifica della qualità del segnale PPG
-ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate)
-mean_ppg_quality = np.mean(ppg_quality)
-
-# Processa il PPG
-ppg_signals, ppg_info = nk.ppg_process(
-    processed_ppg_signal, 
-    sampling_rate=sampling_rate, 
-    method='elgendi'
+app_ui = ui.page_sidebar(
+    ui.sidebar(
+        ui.input_file("file", "Upload SHIMMER CSV File", accept=[".csv"]),
+        ui.input_numeric("sampling_rate", "Sampling Rate (Hz)", value=51.2, min=1),
+        ui.input_numeric("trim_seconds", "Trim Seconds (start/end)", value=10, min=0),
+        ui.input_action_button("analyze", "Analyze", class_="btn-primary"),
+    ),
+    ui.navset_tab(
+        ui.nav_panel(
+            "EDA Analysis",
+            ui.card(
+                ui.card_header("EDA Metrics"),
+                ui.output_text_verbatim("eda_metrics")
+            ),
+            ui.card(
+                ui.card_header("EDA Plots"),
+                ui.output_plot("eda_plot", height="600px")
+            )
+        ),
+        ui.nav_panel(
+            "PPG & Heart Rate",
+            ui.card(
+                ui.card_header("Heart Rate Metrics"),
+                ui.output_text_verbatim("hr_metrics")
+            ),
+            ui.card(
+                ui.card_header("PPG Plots"),
+                ui.output_plot("ppg_plot", height="600px")
+            )
+        ),
+        ui.nav_panel(
+            "HRV Analysis",
+            ui.card(
+                ui.card_header("HRV Metrics"),
+                ui.output_text_verbatim("hrv_metrics")
+            )
+        ),
+        ui.nav_panel(
+            "Respiration",
+            ui.card(
+                ui.card_header("Respiratory Metrics"),
+                ui.output_text_verbatim("resp_metrics")
+            ),
+            ui.card(
+                ui.card_header("PPG-Derived Respiration"),
+                ui.output_plot("resp_plot", height="400px")
+            )
+        )
+    )
 )
 
-# Plot nativo PPG di NeuroKit2
-nk.ppg_plot(ppg_signals, ppg_info)
-plt.subplots_adjust(hspace=0.5)
-plt.show()
+def server(input, output, session):
+    # Reactive value to store analysis results
+    analysis_results = reactive.value(None)
+    
+    @reactive.effect
+    @reactive.event(input.analyze)
+    def _():
+        file_info = input.file()
+        if file_info is None:
+            return
+        
+        try:
+            # Read the uploaded file
+            df = pd.read_csv(file_info[0]["datapath"], sep='\t', skiprows=2)
+            
+            sampling_rate = input.sampling_rate()
+            samples_to_remove = int(input.trim_seconds() * sampling_rate)
+            
+            # Process GSR/EDA signal
+            gsr_signal = df.iloc[:, 3].astype(float).values
+            processed_gsr_signal = gsr_signal[samples_to_remove : -samples_to_remove]
+            
+            eda_signals, eda_info = nk.eda_process(processed_gsr_signal, sampling_rate=sampling_rate)
+            
+            # EDA metrics
+            n_peaks = len(eda_info.get("SCR_Peaks", []))
+            mean_amplitude = np.nanmean(eda_info.get("SCR_Amplitude", [0]))
+            mean_risetime = np.nanmean(eda_info.get("SCR_RiseTime", [0]))
+            mean_recovery = np.nanmean(eda_info.get("SCR_RecoveryTime", [0]))
+            mean_scl = np.mean(eda_signals['EDA_Tonic'])
+            duration_minutes_eda = len(processed_gsr_signal) / sampling_rate / 60
+            scr_per_min = n_peaks / duration_minutes_eda if duration_minutes_eda > 0 else 0
+            
+            # Process PPG signal
+            ppg_signal = df.iloc[:, 5].astype(float).values
+            processed_ppg_signal = ppg_signal[samples_to_remove : -samples_to_remove]
+            
+            ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate)
+            mean_ppg_quality = np.mean(ppg_quality)
+            
+            ppg_signals, ppg_info = nk.ppg_process(
+                processed_ppg_signal, 
+                sampling_rate=sampling_rate, 
+                method='elgendi'
+            )
+            
+            heart_rate = ppg_signals['PPG_Rate']
+            
+            # HRV analysis
+            hrv_indices = nk.hrv(ppg_info, sampling_rate=sampling_rate, show=False)
+            
+            # Respiration from PPG
+            edr = nk.ecg_rsp(ecg_rate=heart_rate.values, sampling_rate=sampling_rate)
+            rsp_peaks, _ = find_peaks(edr, distance=int(sampling_rate * 2))
+            
+            if len(rsp_peaks) > 1:
+                rsp_intervals = np.diff(rsp_peaks) / sampling_rate
+                breathing_rate = 60 / np.mean(rsp_intervals)
+            else:
+                breathing_rate = 0.0
+            
+            # Store all results
+            results = {
+                'eda_signals': eda_signals,
+                'eda_info': eda_info,
+                'eda_metrics': {
+                    'mean_scl': mean_scl,
+                    'scr_per_min': scr_per_min,
+                    'n_peaks': n_peaks,
+                    'mean_amplitude': mean_amplitude,
+                    'mean_risetime': mean_risetime,
+                    'mean_recovery': mean_recovery
+                },
+                'ppg_signals': ppg_signals,
+                'ppg_info': ppg_info,
+                'mean_ppg_quality': mean_ppg_quality,
+                'heart_rate': heart_rate,
+                'hrv_indices': hrv_indices,
+                'edr': edr,
+                'breathing_rate': breathing_rate,
+                'sampling_rate': sampling_rate
+            }
+            
+            analysis_results.set(results)
+            
+        except Exception as e:
+            analysis_results.set({'error': str(e)})
+    
+    @render.text
+    def eda_metrics():
+        results = analysis_results.get()
+        if results is None:
+            return "Upload a file and click 'Analyze' to see results."
+        if 'error' in results:
+            return f"Error: {results['error']}"
+        
+        metrics = results['eda_metrics']
+        return (
+            f"--- METRICHE EDA ---\n"
+            f"Livello Tonico Medio (SCL): {metrics['mean_scl']:.3f} μS\n"
+            f"Frequenza Picchi (SCR/min): {metrics['scr_per_min']:.2f} picchi/min\n"
+            f"Numero totale picchi SCR: {metrics['n_peaks']}\n"
+            f"Ampiezza media SCR: {metrics['mean_amplitude']:.3f} μS\n"
+            f"Rise Time medio: {metrics['mean_risetime']:.3f} s\n"
+            f"Half-Recovery Time medio: {metrics['mean_recovery']:.3f} s"
+        )
+    
+    @render.plot
+    def eda_plot():
+        results = analysis_results.get()
+        if results is None or 'error' in results:
+            return
+        
+        fig = nk.eda_plot(results['eda_signals'], results['eda_info'])
+        plt.subplots_adjust(hspace=0.5)
+        return fig
+    
+    @render.text
+    def hr_metrics():
+        results = analysis_results.get()
+        if results is None:
+            return "Upload a file and click 'Analyze' to see results."
+        if 'error' in results:
+            return f"Error: {results['error']}"
+        
+        hr = results['heart_rate']
+        return (
+            f"--- METRICHE HEART RATE E QUALITÀ ---\n"
+            f"Qualità media del segnale PPG (0-1): {results['mean_ppg_quality']:.3f}\n"
+            f"HR Minimo: {np.min(hr):.2f} bpm\n"
+            f"HR Massimo: {np.max(hr):.2f} bpm\n"
+            f"HR Medio: {np.mean(hr):.2f} bpm"
+        )
+    
+    @render.plot
+    def ppg_plot():
+        results = analysis_results.get()
+        if results is None or 'error' in results:
+            return
+        
+        fig = nk.ppg_plot(results['ppg_signals'], results['ppg_info'])
+        plt.subplots_adjust(hspace=0.5)
+        return fig
+    
+    @render.text
+    def hrv_metrics():
+        results = analysis_results.get()
+        if results is None:
+            return "Upload a file and click 'Analyze' to see results."
+        if 'error' in results:
+            return f"Error: {results['error']}"
+        
+        hrv = results['hrv_indices']
+        metrics_to_print = ['HRV_SDNN', 'HRV_RMSSD', 'HRV_pNN50', 'HRV_LFn', 'HRV_HFn', 'HRV_LFHF', 'HRV_SampEn']
+        
+        output = "--- METRICHE HRV PRINCIPALI ---\n"
+        for metric in metrics_to_print:
+            if metric in hrv.columns:
+                output += f"{metric}: {hrv[metric].values[0]:.4f}\n"
+        
+        return output
+    
+    @render.text
+    def resp_metrics():
+        results = analysis_results.get()
+        if results is None:
+            return "Upload a file and click 'Analyze' to see results."
+        if 'error' in results:
+            return f"Error: {results['error']}"
+        
+        return (
+            f"--- METRICHE RESPIRATORIE ---\n"
+            f"Breathing Rate Stimato: {results['breathing_rate']:.2f} bpm (atti al minuto)"
+        )
+    
+    @render.plot
+    def resp_plot():
+        results = analysis_results.get()
+        if results is None or 'error' in results:
+            return
+        
+        edr = results['edr']
+        sampling_rate = results['sampling_rate']
+        time_normalized = np.arange(len(edr)) / sampling_rate
+        
+        fig, ax = plt.subplots(figsize=(15, 5))
+        ax.plot(time_normalized, edr)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Respiration")
+        ax.set_title("PPG-derived respiration over time")
+        ax.grid(True)
+        
+        return fig
 
-# Statistiche Heart Rate (HR)
-heart_rate = ppg_signals['PPG_Rate']
-print("--- METRICHE HEART RATE E QUALITÀ ---")
-print(f"Qualità media del segnale PPG (0-1): {mean_ppg_quality:.3f}")
-print(f"HR Minimo: {np.min(heart_rate):.2f} bpm")
-print(f"HR Massimo: {np.max(heart_rate):.2f} bpm")
-print(f"HR Medio: {np.mean(heart_rate):.2f} bpm\n")
-
-
-# ==========================================
-# 4. ANALISI HRV (Heart Rate Variability)
-# ==========================================
-
-# Calcola l'HRV usando i picchi validati
-hrv_indices = nk.hrv(ppg_info, sampling_rate=sampling_rate, show=False)
-
-print("--- METRICHE HRV PRINCIPALI ---")
-metrics_to_print = ['HRV_SDNN', 'HRV_RMSSD', 'HRV_pNN50', 'HRV_LFn', 'HRV_HFn', 'HRV_LFHF', 'HRV_SampEn']
-for metric in metrics_to_print:
-    if metric in hrv_indices.columns:
-        print(f"{metric}: {hrv_indices[metric].values[0]:.4f}")
-
-
-# ==========================================
-# 5. RESPIRAZIONE DERIVATA DA PPG (PDR / EDR)
-# ==========================================
-
-# Estrae il pattern respiratorio basandosi sull'Aritmia Sinusale Respiratoria (RSA)
-edr = nk.ecg_rsp(ecg_rate=heart_rate.values, sampling_rate=sampling_rate)
-
-# NUOVO: Trova i picchi respiratori imponendo una distanza minima di 2 secondi
-# (int(sampling_rate * 2) previene artefatti ad alta frequenza riconosciuti come respiri)
-rsp_peaks, _ = find_peaks(edr, distance=int(sampling_rate * 2))
-
-# NUOVO: Calcolo del Breathing Rate basato sugli intervalli Breath-to-Breath
-if len(rsp_peaks) > 1:
-    rsp_intervals = np.diff(rsp_peaks) / sampling_rate
-    breathing_rate = 60 / np.mean(rsp_intervals)
-else:
-    breathing_rate = 0.0
-
-print(f"\n--- METRICHE RESPIRATORIE ---")
-print(f"Breathing Rate Stimato: {breathing_rate:.2f} bpm (atti al minuto)")
-
-plt.figure(figsize=(15, 5))
-plt.plot(time_normalized, edr)
-plt.xlabel("Time (s)")
-plt.ylabel("Respiration")
-plt.title("PPG-derived respiration over time")
-plt.grid(True)
-plt.show()
+app = App(app_ui, server)
