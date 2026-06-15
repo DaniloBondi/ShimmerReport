@@ -1,5 +1,5 @@
-shin
-nump
+shiny
+numpy
 pandas
 neurokit2
 matplotlib
