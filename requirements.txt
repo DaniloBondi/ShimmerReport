@@ -5,3 +5,5 @@ neurokit2
 matplotlib
 scipy
 scikit-learn
+pywavelets
+requests
