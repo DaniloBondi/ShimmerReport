@@ -11,277 +11,163 @@ app_ui = ui.page_sidebar(
         ui.input_file("file", "Upload SHIMMER CSV File", accept=[".csv"]),
         ui.input_numeric("sampling_rate", "Sampling Rate (Hz)", value=51.2, min=1),
         ui.input_numeric("trim_seconds", "Trim Seconds (start/end)", value=10, min=0),
+        ui.input_numeric("peak_rel_height", "EDA Peak Rel. Height Min", value=4, min=0),
         ui.input_action_button("analyze", "Analyze", class_="btn-primary"),
     ),
     ui.navset_tab(
         ui.nav_panel(
             "EDA Analysis",
-            ui.card(
-                ui.card_header("EDA Metrics"),
-                ui.output_text_verbatim("eda_metrics")
-            ),
-            ui.card(
-                ui.card_header("EDA Plots"),
-                ui.output_plot("eda_plot", height="600px")
-            )
+            ui.card(ui.card_header("EDA Full Report & Metrics"), ui.output_text_verbatim("eda_metrics")),
+            ui.card(ui.card_header("Custom Component Plot (Total/Tonic/Phasic)"), ui.output_plot("eda_custom_plot", height="400px")),
+            ui.card(ui.card_header("EDA Standard Diagnostic Plot"), ui.output_plot("eda_plot", height="500px"))
         ),
         ui.nav_panel(
             "PPG & Heart Rate",
-            ui.card(
-                ui.card_header("Heart Rate Metrics"),
-                ui.output_text_verbatim("hr_metrics")
-            ),
-            ui.card(
-                ui.card_header("PPG Plots"),
-                ui.output_plot("ppg_plot", height="600px")
-            )
+            ui.card(ui.card_header("Heart Rate Metrics"), ui.output_text_verbatim("hr_metrics")),
+            ui.card(ui.card_header("Heart Rate Trend"), ui.output_plot("hr_custom_plot", height="350px")),
+            ui.card(ui.card_header("PPG Standard Plot"), ui.output_plot("ppg_plot", height="500px"))
         ),
         ui.nav_panel(
             "HRV Analysis",
-            ui.card(
-                ui.card_header("HRV Metrics"),
-                ui.output_text_verbatim("hrv_metrics")
-            )
+            ui.card(ui.card_header("Full HRV Indices"), ui.output_text_verbatim("hrv_metrics")),
+            ui.card(ui.card_header("HRV Poincaré Plot"), ui.output_plot("hrv_plot", height="500px"))
         ),
         ui.nav_panel(
             "Respiration",
-            ui.card(
-                ui.card_header("Respiratory Metrics"),
-                ui.output_text_verbatim("resp_metrics")
-            ),
-            ui.card(
-                ui.card_header("PPG-Derived Respiration"),
-                ui.output_plot("resp_plot", height="400px")
-            )
+            ui.card(ui.card_header("Respiratory Metrics"), ui.output_text_verbatim("resp_metrics")),
+            ui.card(ui.card_header("PPG-Derived Respiration (PDR)"), ui.output_plot("resp_plot", height="400px"))
         )
     )
 )
 
 def server(input, output, session):
-    # Reactive value to store analysis results
-    analysis_results = reactive.value(None)
-    
-    @reactive.effect
+    @reactive.Calc
     @reactive.event(input.analyze)
-    def _():
+    def processed_data():
         file_info = input.file()
-        if file_info is None:
-            return
-        
-        try:
-            # Read the uploaded file
-            df = pd.read_csv(file_info[0]["datapath"], sep='\t', skiprows=2)
-            
-            sampling_rate = input.sampling_rate()
-            samples_to_remove = int(input.trim_seconds() * sampling_rate)
-            
-            # Process GSR/EDA signal
-            gsr_signal = df.iloc[:, 3].astype(float).values
-            processed_gsr_signal = gsr_signal[samples_to_remove : -samples_to_remove]
-            
-            eda_signals, eda_info = nk.eda_process(processed_gsr_signal, sampling_rate=sampling_rate)
-            
-            # EDA metrics
-            n_peaks = len(eda_info.get("SCR_Peaks", []))
-            mean_amplitude = np.nanmean(eda_info.get("SCR_Amplitude", [0]))
-            mean_risetime = np.nanmean(eda_info.get("SCR_RiseTime", [0]))
-            mean_recovery = np.nanmean(eda_info.get("SCR_RecoveryTime", [0]))
-            mean_scl = np.mean(eda_signals['EDA_Tonic'])
-            duration_minutes_eda = len(processed_gsr_signal) / sampling_rate / 60
-            scr_per_min = n_peaks / duration_minutes_eda if duration_minutes_eda > 0 else 0
-            
-            # Process PPG signal
-            ppg_signal = df.iloc[:, 5].astype(float).values
-            processed_ppg_signal = ppg_signal[samples_to_remove : -samples_to_remove]
-
-            # Clean obvious bad values
-            processed_ppg_signal = np.nan_to_num(processed_ppg_signal, nan=0.0, posinf=0.0, neginf=0.0)
-
-            # First detect peaks / process PPG (this populates ppg_info with peak locations)
-            ppg_signals, ppg_info = nk.ppg_process(
-                processed_ppg_signal,
-                sampling_rate=sampling_rate,
-                method='elgendi'
-            )
-
-            # Try to compute quality using detected peaks; otherwise fallback
-            ppg_peaks = ppg_info.get("PPG_Peaks", None)
-
+        if file_info is None: return None
+        with ui.Progress(min=1, max=5) as p:
             try:
-                # Normalize different possible formats from nk.ppg_process:
-                # - sometimes PPG_Peaks is a dict {index: 1}, sometimes a list/array of indices
-                peak_indices = None
-                if ppg_peaks is None:
-                    peak_indices = None
-                elif isinstance(ppg_peaks, dict):
-                    # keys are the sample indices
-                    peak_indices = np.array(list(ppg_peaks.keys()), dtype=int)
-                else:
-                    # list / ndarray of indices
-                    peak_indices = np.asarray(ppg_peaks, dtype=int)
+                p.set(message="Reading CSV...", value=1)
+                df = pd.read_csv(file_info[0]["datapath"], sep=None, skiprows=2, engine='python')
+                sr = input.sampling_rate()
+                trim = int(input.trim_seconds() * sr)
+                if len(df) <= (2 * trim) + 20: return {'error': 'File too short.'}
+                
+                gsr = pd.to_numeric(df.iloc[trim:-trim, 3], errors='coerce').dropna().values
+                ppg = pd.to_numeric(df.iloc[trim:-trim, 5], errors='coerce').dropna().values
 
-                if peak_indices is None or peak_indices.size == 0:
-                    # use a peak-free method like 'skewness'
-                    ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate, method='skewness')
-                else:
-                    # pass detected peak indices using the 'peaks' keyword
-                    ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate, peaks=peak_indices)
+                p.set(message="EDA Processing...", value=2)
+                eda_sigs, eda_info = nk.eda_process(gsr, sampling_rate=sr)
+                eda_pks = nk.signal_findpeaks(eda_sigs['EDA_Phasic'], relative_height_min=input.peak_rel_height())
+                
+                p.set(message="PPG Processing...", value=3)
+                ppg_sigs, ppg_info = nk.ppg_process(ppg, sampling_rate=sr, method='elgendi')
 
-                mean_ppg_quality = float(np.mean(ppg_quality)) if np.size(ppg_quality) else 0.0
-            except Exception:
-                # Final fallback if neurokit still complains
-                mean_ppg_quality = 0.0
-    
-            
-            ppg_signal = df.iloc[:, 5].astype(float).values
-            processed_ppg_signal = ppg_signal[samples_to_remove : -samples_to_remove]
-            
-            heart_rate = ppg_signals['PPG_Rate']
-            
-            # HRV analysis
-            hrv_indices = nk.hrv(ppg_info, sampling_rate=sampling_rate, show=False)
-            
-            # Respiration from PPG
-            edr = nk.ecg_rsp(ecg_rate=heart_rate.values, sampling_rate=sampling_rate)
-            rsp_peaks, _ = find_peaks(edr, distance=int(sampling_rate * 2))
-            
-            if len(rsp_peaks) > 1:
-                rsp_intervals = np.diff(rsp_peaks) / sampling_rate
-                breathing_rate = 60 / np.mean(rsp_intervals)
-            else:
-                breathing_rate = 0.0
-            
-            # Store all results
-            results = {
-                'eda_signals': eda_signals,
-                'eda_info': eda_info,
-                'eda_metrics': {
-                    'mean_scl': mean_scl,
-                    'scr_per_min': scr_per_min,
-                    'n_peaks': n_peaks,
-                    'mean_amplitude': mean_amplitude,
-                    'mean_risetime': mean_risetime,
-                    'mean_recovery': mean_recovery
-                },
-                'ppg_signals': ppg_signals,
-                'ppg_info': ppg_info,
-                'mean_ppg_quality': mean_ppg_quality,
-                'heart_rate': heart_rate,
-                'hrv_indices': hrv_indices,
-                'edr': edr,
-                'breathing_rate': breathing_rate,
-                'sampling_rate': sampling_rate
-            }
-            
-            analysis_results.set(results)
-            
-        except Exception as e:
-            analysis_results.set({'error': str(e)})
-    
+                p.set(message="HRV & Resp Analysis...", value=4)
+                hrv = nk.hrv(ppg_info, sampling_rate=sr) if len(ppg_info.get('PPG_Peaks', [])) > 3 else None
+                edr = np.array([])
+                if 'PPG_Rate' in ppg_sigs.columns:
+                    hr_v = ppg_sigs['PPG_Rate'].values
+                    if hr_v.size > 0: edr = nk.ecg_rsp(ecg_rate=hr_v, sampling_rate=sr)
+
+                p.set(message="Finalizing...", value=5)
+                return {'eda_sigs': eda_sigs, 'eda_info': eda_info, 'eda_pks': eda_pks, 'ppg_sigs': ppg_sigs, 'ppg_info': ppg_info, 'hrv': hrv, 'edr': edr, 'sr': sr, 'raw_gsr': gsr}
+            except Exception as e: return {'error': str(e)}
+
     @render.text
     def eda_metrics():
-        results = analysis_results.get()
-        if results is None:
-            return "Upload a file and click 'Analyze' to see results."
-        if 'error' in results:
-            return f"Error: {results['error']}"
-        
-        metrics = results['eda_metrics']
-        return (
-            f"--- METRICHE EDA ---\n"
-            f"Livello Tonico Medio (SCL): {metrics['mean_scl']:.3f} μS\n"
-            f"Frequenza Picchi (SCR/min): {metrics['scr_per_min']:.2f} picchi/min\n"
-            f"Numero totale picchi SCR: {metrics['n_peaks']}\n"
-            f"Ampiezza media SCR: {metrics['mean_amplitude']:.3f} μS\n"
-            f"Rise Time medio: {metrics['mean_risetime']:.3f} s\n"
-            f"Half-Recovery Time medio: {metrics['mean_recovery']:.3f} s"
-        )
-    
+        res = processed_data()
+        if res is None or 'error' in res: return res.get('error', "In attesa di dati...")
+        sigs = res['eda_sigs']
+        duration_min = len(res['raw_gsr']) / res['sr'] / 60
+        n_peaks = len(res['eda_pks']['Peaks'])
+        out = f"--- EDA FULL REPORT ---\n"
+        out += f"Mean Total GSR: {np.mean(res['raw_gsr']):.3f} ̆S [Min: {np.min(res['raw_gsr']):.3f}, Max: {np.max(res['raw_gsr']):.3f}]\n"
+        out += f"Mean Tonic (SCL): {np.mean(sigs['EDA_Tonic']):.3f} ̆S [Min: {np.min(sigs['EDA_Tonic']):.3f}, Max: {np.max(sigs['EDA_Tonic']):.3f}]\n"
+        out += f"Mean Phasic (SCR): {np.mean(np.abs(sigs['EDA_Phasic'])):.3f} ̆S\n"
+        out += f"Frequency: {n_peaks/duration_min:.2f} SCR/min (Total Peaks: {n_peaks})\n\n"
+        if n_peaks > 0:
+            top_idx = np.argmax(res['eda_pks']['Height'])
+            pk_time = res['eda_pks']['Peaks'][top_idx] / res['sr']
+            out += f"Highest Peak: Timestamp {pk_time:.2f}s, Height {res['eda_pks']['Height'][top_idx]:.3f} ̆S\n"
+        return out
+
+    @render.plot
+    def eda_custom_plot():
+        res = processed_data()
+        if not res or 'eda_sigs' not in res: return
+        time = np.arange(len(res['raw_gsr'])) / res['sr']
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(time, res['raw_gsr'], label='Total EDA (Raw)', alpha=0.4, color='gray')
+        ax.plot(time, res['eda_sigs']['EDA_Tonic'], label='Tonic Component', linewidth=2, color='blue')
+        ax.plot(time, res['eda_sigs']['EDA_Phasic'], label='Phasic Component', alpha=0.8, color='red')
+        ax.set_title("EDA Component Decomposition"); ax.set_xlabel("Time (s)"); ax.set_ylabel("Conductance (̆S)")
+        ax.legend(); ax.grid(True)
+        return fig
+
     @render.plot
     def eda_plot():
-        results = analysis_results.get()
-        if results is None or 'error' in results:
-            return
-        
-        fig = nk.eda_plot(results['eda_signals'], results['eda_info'])
-        plt.subplots_adjust(hspace=0.5)
-        return fig
-    
+        res = processed_data()
+        if not res or 'eda_sigs' not in res: return
+        return nk.eda_plot(res['eda_sigs'], res['eda_info'])
+
     @render.text
     def hr_metrics():
-        results = analysis_results.get()
-        if results is None:
-            return "Upload a file and click 'Analyze' to see results."
-        if 'error' in results:
-            return f"Error: {results['error']}"
-        
-        hr = results['heart_rate']
-        return (
-            f"--- METRICHE HEART RATE E QUALITÀ ---\n"
-            f"Qualità media del segnale PPG (0-1): {results['mean_ppg_quality']:.3f}\n"
-            f"HR Minimo: {np.min(hr):.2f} bpm\n"
-            f"HR Massimo: {np.max(hr):.2f} bpm\n"
-            f"HR Medio: {np.mean(hr):.2f} bpm"
-        )
-    
+        res = processed_data()
+        if not res or 'ppg_sigs' not in res: return ""
+        hr = res['ppg_sigs']['PPG_Rate'].values
+        return f"Median HR: {np.nanmedian(hr):.2f} BPM\nMin/Max: {np.nanmin(hr):.1f} / {np.nanmax(hr):.1f}"
+
+    @render.plot
+    def hr_custom_plot():
+        res = processed_data()
+        if not res or 'ppg_sigs' not in res: return
+        hr = res['ppg_sigs']['PPG_Rate'].values
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(np.arange(len(hr))/res['sr'], hr)
+        ax.set_ylim(max(30, np.nanmin(hr)-5), min(200, np.nanmax(hr)+5))
+        ax.set_title("Heart Rate Trend"); ax.grid(True)
+        return fig
+
     @render.plot
     def ppg_plot():
-        results = analysis_results.get()
-        if results is None or 'error' in results:
-            return
-        
-        fig = nk.ppg_plot(results['ppg_signals'], results['ppg_info'])
-        plt.subplots_adjust(hspace=0.5)
-        return fig
-    
+        res = processed_data()
+        if not res or 'ppg_sigs' not in res: return
+        return nk.ppg_plot(res['ppg_sigs'], res['ppg_info'])
+
     @render.text
     def hrv_metrics():
-        results = analysis_results.get()
-        if results is None:
-            return "Upload a file and click 'Analyze' to see results."
-        if 'error' in results:
-            return f"Error: {results['error']}"
-        
-        hrv = results['hrv_indices']
-        metrics_to_print = ['HRV_SDNN', 'HRV_RMSSD', 'HRV_pNN50', 'HRV_LFn', 'HRV_HFn', 'HRV_LFHF', 'HRV_SampEn']
-        
-        output = "--- METRICHE HRV PRINCIPALI ---\n"
-        for metric in metrics_to_print:
-            if metric in hrv.columns:
-                output += f"{metric}: {hrv[metric].values[0]:.4f}\n"
-        
-        return output
-    
+        res = processed_data()
+        if not res or res.get('hrv') is None: return "Nessun dato HRV."
+        h = res['hrv']
+        metrics = ['HRV_SDNN', 'HRV_RMSSD', 'HRV_pNN50', 'HRV_LFn', 'HRV_HFn', 'HRV_LFHF', 'HRV_SampEn']
+        return "\n".join([f"{m}: {h[m].iloc[0]:.4f}" for m in metrics if m in h.columns])
+
+    @render.plot
+    def hrv_plot():
+        res = processed_data()
+        if not res or res.get('hrv') is None: return
+        # Fix: Capture the figure object specifically
+        nk.hrv_nonlinear(res['ppg_info'], sampling_rate=res['sr'], show=True)
+        fig = plt.gcf()
+        return fig
+
     @render.text
     def resp_metrics():
-        results = analysis_results.get()
-        if results is None:
-            return "Upload a file and click 'Analyze' to see results."
-        if 'error' in results:
-            return f"Error: {results['error']}"
-        
-        return (
-            f"--- METRICHE RESPIRATORIE ---\n"
-            f"Breathing Rate Stimato: {results['breathing_rate']:.2f} bpm (atti al minuto)"
-        )
-    
+        res = processed_data()
+        if not res or res['edr'].size == 0: return ""
+        peaks, _ = find_peaks(res['edr'], distance=int(res['sr'] * 2))
+        br = (len(peaks) / (len(res['edr']) / res['sr'])) * 60 if len(peaks) > 1 else 0
+        return f"Estimated Breathing Rate: {br:.2f} breaths/min"
+
     @render.plot
     def resp_plot():
-        results = analysis_results.get()
-        if results is None or 'error' in results:
-            return
-        
-        edr = results['edr']
-        sampling_rate = results['sampling_rate']
-        time_normalized = np.arange(len(edr)) / sampling_rate
-        
-        fig, ax = plt.subplots(figsize=(15, 5))
-        ax.plot(time_normalized, edr)
-        ax.set_xlabel("Time (s)")
-        ax.set_ylabel("Respiration")
-        ax.set_title("PPG-derived respiration over time")
-        ax.grid(True)
-        
+        res = processed_data()
+        if not res or res['edr'].size == 0: return
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(np.arange(len(res['edr']))/res['sr'], res['edr'])
+        ax.set_title("PPG-Derived Respiration (PDR)"); ax.grid(True)
         return fig
 
 app = App(app_ui, server)
