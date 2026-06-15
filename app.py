@@ -4,7 +4,6 @@ import pandas as pd
 import neurokit2 as nk
 from matplotlib import pyplot as plt
 from scipy.signal import find_peaks
-import io
 
 app_ui = ui.page_sidebar(
     ui.sidebar(
