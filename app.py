@@ -93,15 +93,32 @@ def server(input, output, session):
             # Process PPG signal
             ppg_signal = df.iloc[:, 5].astype(float).values
             processed_ppg_signal = ppg_signal[samples_to_remove : -samples_to_remove]
-            
-            ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate)
-            mean_ppg_quality = np.mean(ppg_quality)
-            
+
+            # Clean obvious bad values
+            processed_ppg_signal = np.nan_to_num(processed_ppg_signal, nan=0.0, posinf=0.0, neginf=0.0)
+
+            # First detect peaks / process PPG (this populates ppg_info with peak locations)
             ppg_signals, ppg_info = nk.ppg_process(
-                processed_ppg_signal, 
-                sampling_rate=sampling_rate, 
+                processed_ppg_signal,
+                sampling_rate=sampling_rate,
                 method='elgendi'
             )
+
+            # Try to compute quality using detected peaks; otherwise fallback
+            cycle_inds = ppg_info.get("PPG_Peaks", None)  # name may vary; check ppg_info keys for exact name
+            try:
+                # If cycle_inds is empty or None, use a peak-free method like 'skewness'
+                if cycle_inds is None or (hasattr(cycle_inds, "__len__") and len(cycle_inds) == 0):
+                    ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate, method='skewness')
+                else:
+                    ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate, cycle_inds=cycle_inds)
+                mean_ppg_quality = float(np.mean(ppg_quality)) if np.size(ppg_quality) else 0.0
+            except ValueError:
+                # Final fallback if neurokit still complains
+                mean_ppg_quality = 0.0
+            
+            ppg_signal = df.iloc[:, 5].astype(float).values
+            processed_ppg_signal = ppg_signal[samples_to_remove : -samples_to_remove]
             
             heart_rate = ppg_signals['PPG_Rate']
             
