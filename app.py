@@ -105,17 +105,33 @@ def server(input, output, session):
             )
 
             # Try to compute quality using detected peaks; otherwise fallback
-            cycle_inds = ppg_info.get("PPG_Peaks", None)  # name may vary; check ppg_info keys for exact name
+            ppg_peaks = ppg_info.get("PPG_Peaks", None)
+
             try:
-                # If cycle_inds is empty or None, use a peak-free method like 'skewness'
-                if cycle_inds is None or (hasattr(cycle_inds, "__len__") and len(cycle_inds) == 0):
+                # Normalize different possible formats from nk.ppg_process:
+                # - sometimes PPG_Peaks is a dict {index: 1}, sometimes a list/array of indices
+                peak_indices = None
+                if ppg_peaks is None:
+                    peak_indices = None
+                elif isinstance(ppg_peaks, dict):
+                    # keys are the sample indices
+                    peak_indices = np.array(list(ppg_peaks.keys()), dtype=int)
+                else:
+                    # list / ndarray of indices
+                    peak_indices = np.asarray(ppg_peaks, dtype=int)
+
+                if peak_indices is None or peak_indices.size == 0:
+                    # use a peak-free method like 'skewness'
                     ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate, method='skewness')
                 else:
-                    ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate, cycle_inds=cycle_inds)
+                    # pass detected peak indices using the 'peaks' keyword
+                    ppg_quality = nk.ppg_quality(processed_ppg_signal, sampling_rate=sampling_rate, peaks=peak_indices)
+
                 mean_ppg_quality = float(np.mean(ppg_quality)) if np.size(ppg_quality) else 0.0
-            except ValueError:
+            except Exception:
                 # Final fallback if neurokit still complains
                 mean_ppg_quality = 0.0
+    
             
             ppg_signal = df.iloc[:, 5].astype(float).values
             processed_ppg_signal = ppg_signal[samples_to_remove : -samples_to_remove]
