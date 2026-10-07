@@ -1,0 +1,663 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2511
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fmodern\fcharset0 Courier;}
+{\colortbl;\red255\green255\blue255;\red15\green112\blue1;\red255\green255\blue255;\red0\green0\blue0;
+\red144\green1\blue18;\red19\green85\blue52;\red0\green0\blue255;\red131\green0\blue165;\red86\green65\blue25;
+\red0\green0\blue109;\red31\green99\blue128;}
+{\*\expandedcolortbl;;\cssrgb\c0\c50196\c0;\cssrgb\c100000\c100000\c100000;\cssrgb\c0\c0\c0;
+\cssrgb\c63922\c8235\c8235;\cssrgb\c6667\c40000\c26667;\cssrgb\c0\c0\c100000;\cssrgb\c59216\c13725\c70588;\cssrgb\c41569\c32157\c12941;
+\cssrgb\c0\c6275\c50196;\cssrgb\c14510\c46275\c57647;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww21620\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\sl380\partightenfactor0
+
+\f0\fs28 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 #@title Configurazione Interattiva EMG Completa (TKEO + Log-varianza + Sinergie + Onset) \{ run: "auto" \}\cf4 \cb1 \strokec4 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3 path = \cf5 \strokec5 "/content/C1.csv"\cf2 \strokec2  #@param \{type:"string"\}\cf4 \cb1 \strokec4 \
+\cb3 out_dir = \cf5 \strokec5 "output_emg"\cf2 \strokec2  #@param \{type:"string"\}\cf4 \cb1 \strokec4 \
+\cb3 tipo_soglia = \cf5 \strokec5 "restrittiva"\cf2 \strokec2  #@param ["restrittiva", "permissiva"]\cf4 \cb1 \strokec4 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf2 \cb3 \strokec2 # Slider per i 6 tagli temporali\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3 taglio_iniziale_s = \cf6 \strokec6 20\cf2 \strokec2  # @param \{"type":"number"\}\cf4 \cb1 \strokec4 \
+\cb3 inizio_slow_s = \cf6 \strokec6 25\cf2 \strokec2  # @param \{"type":"number"\}\cf4 \cb1 \strokec4 \
+\cb3 inizio_fast_s = \cf6 \strokec6 38\cf2 \strokec2  # @param \{"type":"number"\}\cf4 \cb1 \strokec4 \
+\cb3 inizio_reactive_s = \cf6 \strokec6 50\cf2 \strokec2  # @param \{"type":"number"\}\cf4 \cb1 \strokec4 \
+\cb3 inizio_massimale_s = \cf6 \strokec6 60\cf2 \strokec2  # @param \{"type":"number"\}\cf4 \cb1 \strokec4 \
+\cb3 fine_massimale_s = \cf6 \strokec6 66\cf2 \strokec2  # @param \{"type":"number"\}\cf4 \cb1 \strokec4 \
+\
+\cb3 avvia_analisi = \cf7 \strokec7 True\cf2 \strokec2  #@param \{type:"boolean"\}\cf4 \cb1 \strokec4 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf8 \cb3 \strokec8 import\cf4 \strokec4  os\cb1 \
+\cf8 \cb3 \strokec8 import\cf4 \strokec4  numpy \cf8 \strokec8 as\cf4 \strokec4  np\cb1 \
+\cf8 \cb3 \strokec8 import\cf4 \strokec4  pandas \cf8 \strokec8 as\cf4 \strokec4  pd\cb1 \
+\cf8 \cb3 \strokec8 import\cf4 \strokec4  matplotlib.pyplot \cf8 \strokec8 as\cf4 \strokec4  plt\cb1 \
+\cf8 \cb3 \strokec8 from\cf4 \strokec4  scipy \cf8 \strokec8 import\cf4 \strokec4  signal\cb1 \
+\cf8 \cb3 \strokec8 from\cf4 \strokec4  scipy.ndimage \cf8 \strokec8 import\cf4 \strokec4  uniform_filter1d\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # CONFIGURAZIONE\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3 CFG = \{\cb1 \
+\cb3     \cf5 \strokec5 'band'\cf4 \strokec4 : (\cf6 \strokec6 10.0\cf4 \strokec4 , \cf6 \strokec6 250.0\cf4 \strokec4 ),\cb1 \
+\cb3     \cf5 \strokec5 'notch_hz'\cf4 \strokec4 : \cf6 \strokec6 50.0\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'ecg_method'\cf4 \strokec4 : \cf5 \strokec5 'template'\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'ecg_hr_range_bpm'\cf4 \strokec4 : (\cf6 \strokec6 40\cf4 \strokec4 , \cf6 \strokec6 180\cf4 \strokec4 ),\cb1 \
+\cb3     \cf5 \strokec5 'ecg_qrs_band'\cf4 \strokec4 : (\cf6 \strokec6 10.0\cf4 \strokec4 , \cf6 \strokec6 40.0\cf4 \strokec4 ),\cb1 \
+\cb3     \cf5 \strokec5 'ecg_win'\cf4 \strokec4 : (\cf6 \strokec6 0.08\cf4 \strokec4 , \cf6 \strokec6 0.12\cf4 \strokec4 ),\cb1 \
+\cb3     \cf5 \strokec5 'ecg_min_corr'\cf4 \strokec4 : \cf6 \strokec6 0.70\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'env_lp_hz'\cf4 \strokec4 : \cf6 \strokec6 6.0\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'tkeo_lp_hz'\cf4 \strokec4 : \cf6 \strokec6 50.0\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'tkeo_sqrt'\cf4 \strokec4 : \cf7 \strokec7 True\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'k_tkeo'\cf4 \strokec4 : \cf6 \strokec6 8.0\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  tipo_soglia == \cf5 \strokec5 "restrittiva"\cf4 \strokec4  \cf8 \strokec8 else\cf4 \strokec4  \cf6 \strokec6 3.0\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'lv_win_s'\cf4 \strokec4 : \cf6 \strokec6 0.05\cf4 \strokec4 ,                 \cf2 \strokec2 # finestra della log-varianza\cf4 \cb1 \strokec4 \
+\cb3     \cf5 \strokec5 'k_lv'\cf4 \strokec4 : \cf6 \strokec6 5.0\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  tipo_soglia == \cf5 \strokec5 "restrittiva"\cf4 \strokec4  \cf8 \strokec8 else\cf4 \strokec4  \cf6 \strokec6 3.5\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'lv_conferma_min_frac'\cf4 \strokec4 : \cf6 \strokec6 0.40\cf4 \strokec4 ,     \cf2 \strokec2 # un burst TKEO e' confermato se la log-varianza copre >= 30% della sua durata\cf4 \cb1 \strokec4 \
+\cb3     \cf5 \strokec5 'min_dur_s'\cf4 \strokec4 : \cf6 \strokec6 0.03\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'min_gap_s'\cf4 \strokec4 : \cf6 \strokec6 0.05\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'min_overlap_s'\cf4 \strokec4 : \cf6 \strokec6 0.12\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'sync_tol_s'\cf4 \strokec4 : \cf6 \strokec6 0.03\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'norm_percentile'\cf4 \strokec4 : \cf6 \strokec6 100.0\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'nmf_solo_attivi'\cf4 \strokec4 : \cf7 \strokec7 True\cf4 \strokec4 ,\cb1 \
+\cb3     \cf5 \strokec5 'nmf_min_attivo_s'\cf4 \strokec4 : \cf6 \strokec6 0.5\cf4 \strokec4 ,\cb1 \
+\cb3 \}\cb1 \
+\
+\cb3 CH_NAMES = (\cf5 \strokec5 'CH1'\cf4 \strokec4 , \cf5 \strokec5 'CH2'\cf4 \strokec4 )\cb1 \
+\cb3 CH_COL = \{\cf5 \strokec5 'CH1'\cf4 \strokec4 : \cf5 \strokec5 '#1f77b4'\cf4 \strokec4 , \cf5 \strokec5 'CH2'\cf4 \strokec4 : \cf5 \strokec5 '#ff7f0e'\cf4 \strokec4 \}\cb1 \
+\
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # CARICAMENTO\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 load_shimmer_csv\cf4 \strokec4 (\cf10 \strokec10 path\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     \cf8 \strokec8 with\cf4 \strokec4  \cf9 \strokec9 open\cf4 \strokec4 (path, \cf5 \strokec5 "r"\cf4 \strokec4 , encoding=\cf5 \strokec5 "utf-8-sig"\cf4 \strokec4 , errors=\cf5 \strokec5 "replace"\cf4 \strokec4 ) \cf8 \strokec8 as\cf4 \strokec4  f:\cb1 \
+\cb3         first = f.readline().rstrip(\cf5 \strokec5 "\\r\\n"\cf4 \strokec4 ).strip(\cf5 \strokec5 "\\""\cf4 \strokec4 )\cb1 \
+\cb3     skip, sep = \cf6 \strokec6 0\cf4 \strokec4 , \cf5 \strokec5 "\\t"\cf4 \cb1 \strokec4 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  first.lower().startswith(\cf5 \strokec5 "sep="\cf4 \strokec4 ): skip, sep = \cf6 \strokec6 1\cf4 \strokec4 , (first[\cf6 \strokec6 4\cf4 \strokec4 :] \cf7 \strokec7 or\cf4 \strokec4  \cf5 \strokec5 "\\t"\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 else\cf4 \strokec4 : sep = \cf5 \strokec5 "\\t"\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  \cf5 \strokec5 "\\t"\cf4 \strokec4  \cf7 \strokec7 in\cf4 \strokec4  first \cf8 \strokec8 else\cf4 \strokec4  \cf5 \strokec5 ","\cf4 \cb1 \strokec4 \
+\cb3     df = pd.read_csv(path, sep=sep, skiprows=skip, header=\cf6 \strokec6 0\cf4 \strokec4 , index_col=\cf7 \strokec7 False\cf4 \strokec4 , encoding=\cf5 \strokec5 "utf-8-sig"\cf4 \strokec4 )\cb1 \
+\cb3     df = df.loc[:, ~df.columns.astype(\cf11 \strokec11 str\cf4 \strokec4 ).\cf11 \strokec11 str\cf4 \strokec4 .startswith(\cf5 \strokec5 "Unnamed"\cf4 \strokec4 )]\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  pd.to_numeric(df.iloc[\cf6 \strokec6 0\cf4 \strokec4 ], errors=\cf5 \strokec5 "coerce"\cf4 \strokec4 ).isna().\cf9 \strokec9 any\cf4 \strokec4 (): df = df.iloc[\cf6 \strokec6 1\cf4 \strokec4 :]\cb1 \
+\cb3     df = df.apply(pd.to_numeric, errors=\cf5 \strokec5 "coerce"\cf4 \strokec4 ).reset_index(drop=\cf7 \strokec7 True\cf4 \strokec4 )\cb1 \
+\
+\cb3     \cf7 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 find\cf4 \strokec4 (\cf10 \strokec10 token\cf4 \strokec4 ):\cb1 \
+\cb3         cols = [c \cf8 \strokec8 for\cf4 \strokec4  c \cf7 \strokec7 in\cf4 \strokec4  df.columns \cf8 \strokec8 if\cf4 \strokec4  token \cf7 \strokec7 in\cf4 \strokec4  c.upper()]\cb1 \
+\cb3         cal = [c \cf8 \strokec8 for\cf4 \strokec4  c \cf7 \strokec7 in\cf4 \strokec4  cols \cf8 \strokec8 if\cf4 \strokec4  c.upper().endswith(\cf5 \strokec5 "_CAL"\cf4 \strokec4 )]\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  (cal \cf7 \strokec7 or\cf4 \strokec4  cols): \cf8 \strokec8 raise\cf4 \strokec4  \cf11 \strokec11 ValueError\cf4 \strokec4 (\cf7 \strokec7 f\cf5 \strokec5 "Colonna '\cf4 \strokec4 \{token\}\cf5 \strokec5 ' non trovata."\cf4 \strokec4 )\cb1 \
+\cb3         \cf8 \strokec8 return\cf4 \strokec4  (cal \cf7 \strokec7 or\cf4 \strokec4  cols)[\cf6 \strokec6 0\cf4 \strokec4 ]\cb1 \
+\
+\cb3     c_t, c1, c2 = find(\cf5 \strokec5 "TIMESTAMP"\cf4 \strokec4 ), find(\cf5 \strokec5 "EMG_CH1"\cf4 \strokec4 ), find(\cf5 \strokec5 "EMG_CH2"\cf4 \strokec4 )\cb1 \
+\cb3     t_ms = df[c_t].to_numpy(\cf11 \strokec11 float\cf4 \strokec4 )\cb1 \
+\cb3     t = (t_ms - t_ms[\cf6 \strokec6 0\cf4 \strokec4 ]) / \cf6 \strokec6 1000.0\cf4 \cb1 \strokec4 \
+\cb3     fs = \cf6 \strokec6 1.0\cf4 \strokec4  / np.median(np.diff(t))\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  \cf11 \strokec11 dict\cf4 \strokec4 (t=t, fs=fs, ch1=df[c1].to_numpy(\cf11 \strokec11 float\cf4 \strokec4 ), ch2=df[c2].to_numpy(\cf11 \strokec11 float\cf4 \strokec4 ))\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # UTILITA' SU MASCHERE BOOLEANE E SEGNALI\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 runs\cf4 \strokec4 (\cf10 \strokec10 mask\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     m = np.concatenate(([\cf6 \strokec6 0\cf4 \strokec4 ], np.asarray(mask, np.int8), [\cf6 \strokec6 0\cf4 \strokec4 ]))\cb1 \
+\cb3     d = np.diff(m)\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  \cf11 \strokec11 list\cf4 \strokec4 (\cf9 \strokec9 zip\cf4 \strokec4 (np.where(d == \cf6 \strokec6 1\cf4 \strokec4 )[\cf6 \strokec6 0\cf4 \strokec4 ], np.where(d == \cf6 \strokec6 -1\cf4 \strokec4 )[\cf6 \strokec6 0\cf4 \strokec4 ]))\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 filter_durations\cf4 \strokec4 (\cf10 \strokec10 active\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 min_dur_s\cf4 \strokec4 , \cf10 \strokec10 min_gap_s\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     m = active.copy()\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  a, b \cf7 \strokec7 in\cf4 \strokec4  runs(~m):\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  a > \cf6 \strokec6 0\cf4 \strokec4  \cf7 \strokec7 and\cf4 \strokec4  b < \cf9 \strokec9 len\cf4 \strokec4 (m) \cf7 \strokec7 and\cf4 \strokec4  (b - a) < min_gap_s * fs: m[a:b] = \cf7 \strokec7 True\cf4 \cb1 \strokec4 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  a, b \cf7 \strokec7 in\cf4 \strokec4  runs(m):\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  (b - a) < min_dur_s * fs: m[a:b] = \cf7 \strokec7 False\cf4 \cb1 \strokec4 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  m\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 preprocess_emg\cf4 \strokec4 (\cf10 \strokec10 x\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     x = x - np.median(x)\cb1 \
+\cb3     hi = \cf9 \strokec9 min\cf4 \strokec4 (CFG[\cf5 \strokec5 'band'\cf4 \strokec4 ][\cf6 \strokec6 1\cf4 \strokec4 ], \cf6 \strokec6 0.45\cf4 \strokec4  * fs)\cb1 \
+\cb3     sos = signal.butter(\cf6 \strokec6 4\cf4 \strokec4 , [CFG[\cf5 \strokec5 'band'\cf4 \strokec4 ][\cf6 \strokec6 0\cf4 \strokec4 ], hi], btype=\cf5 \strokec5 'bandpass'\cf4 \strokec4 , fs=fs, output=\cf5 \strokec5 'sos'\cf4 \strokec4 )\cb1 \
+\cb3     y = signal.sosfiltfilt(sos, x)\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  CFG[\cf5 \strokec5 'notch_hz'\cf4 \strokec4 ]:\cb1 \
+\cb3         b, a = signal.iirnotch(CFG[\cf5 \strokec5 'notch_hz'\cf4 \strokec4 ], \cf6 \strokec6 30.0\cf4 \strokec4 , fs)\cb1 \
+\cb3         y = signal.filtfilt(b, a, y)\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  y\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 compute_envelope\cf4 \strokec4 (\cf10 \strokec10 x\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 lp_hz\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     sos = signal.butter(\cf6 \strokec6 4\cf4 \strokec4 , lp_hz, btype=\cf5 \strokec5 'lowpass'\cf4 \strokec4 , fs=fs, output=\cf5 \strokec5 'sos'\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  np.clip(signal.sosfiltfilt(sos, np.\cf9 \strokec9 abs\cf4 \strokec4 (x)), \cf6 \strokec6 0\cf4 \strokec4 , \cf7 \strokec7 None\cf4 \strokec4 )\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 _rsigma\cf4 \strokec4 (\cf10 \strokec10 v\cf4 \strokec4 ): \cf8 \strokec8 return\cf4 \strokec4  \cf6 \strokec6 1.4826\cf4 \strokec4  * np.median(np.\cf9 \strokec9 abs\cf4 \strokec4 (v - np.median(v)))\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # RIMOZIONE ECG ADATTIVA (v4)\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 #  - la FC e' stimata dal segnale con autocorrelazione SOLO sulle finestre quiete\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 #    (con burst EMG quasi periodici l'autocorrelazione globale sbaglia)\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 #  - la distanza minima tra battiti e' 0.6*RR stimato (non una FC massima fissa)\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 #  - il template viene costruito con allineamento fine e correlazione minima:\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 #    i battiti coperti dall'EMG (correlazione < ecg_min_corr) NON vengono toccati\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 ecg_find_beats\cf4 \strokec4 (\cf10 \strokec10 xs\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 cfg\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     \cf5 \strokec5 """Stima FC e candidati picco R. L'ECG e' sincrono sui due canali: si sommano\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf5 \cb3 \strokec5     i |segnali| normalizzati nella banda QRS (l'EMG e' indipendente tra muscoli)."""\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     sos = signal.butter(\cf6 \strokec6 3\cf4 \strokec4 , cfg[\cf5 \strokec5 'ecg_qrs_band'\cf4 \strokec4 ], btype=\cf5 \strokec5 'bandpass'\cf4 \strokec4 , fs=fs, output=\cf5 \strokec5 'sos'\cf4 \strokec4 )\cb1 \
+\cb3     az = \cf6 \strokec6 0\cf4 \cb1 \strokec4 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  x \cf7 \strokec7 in\cf4 \strokec4  xs:\cb1 \
+\cb3         z = signal.sosfiltfilt(sos, x - np.median(x))\cb1 \
+\cb3         az = az + np.\cf9 \strokec9 abs\cf4 \strokec4 (z) / \cf9 \strokec9 max\cf4 \strokec4 (_rsigma(z), \cf6 \strokec6 1e-12\cf4 \strokec4 )\cb1 \
+\cb3     q = uniform_filter1d(az, \cf9 \strokec9 max\cf4 \strokec4 (\cf6 \strokec6 3\cf4 \strokec4 , \cf11 \strokec11 int\cf4 \strokec4 (\cf6 \strokec6 0.03\cf4 \strokec4  * fs)))\cb1 \
+\cb3     lvl = uniform_filter1d(az, \cf11 \strokec11 int\cf4 \strokec4 (fs))\cb1 \
+\cb3     quiet = lvl <= np.percentile(lvl, \cf6 \strokec6 40\cf4 \strokec4 )                 \cf2 \strokec2 # 40% piu' quieto della registrazione\cf4 \cb1 \strokec4 \
+\cb3     qq = q[quiet]\cb1 \
+\cb3     thr = np.median(qq) + \cf6 \strokec6 8\cf4 \strokec4  * _rsigma(qq)\cb1 \
+\cb3     a = np.where(quiet, np.clip(q, \cf6 \strokec6 0\cf4 \strokec4 , np.percentile(qq, \cf6 \strokec6 99.9\cf4 \strokec4 )) - qq.mean(), \cf6 \strokec6 0.0\cf4 \strokec4 )\cb1 \
+\cb3     n = \cf9 \strokec9 len\cf4 \strokec4 (a)\cb1 \
+\
+\cb3     \cf7 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 acf\cf4 \strokec4 (\cf10 \strokec10 v\cf4 \strokec4 ):\cb1 \
+\cb3         F = np.fft.rfft(v, \cf6 \strokec6 2\cf4 \strokec4  * n)\cb1 \
+\cb3         \cf8 \strokec8 return\cf4 \strokec4  np.fft.irfft(F * np.conj(F))[:n]\cb1 \
+\cb3     ac = acf(a) / np.maximum(acf(quiet.astype(\cf11 \strokec11 float\cf4 \strokec4 )), \cf6 \strokec6 1.0\cf4 \strokec4 )   \cf2 \strokec2 # normalizza per n. di coppie valide\cf4 \cb1 \strokec4 \
+\cb3     ac /= ac[\cf6 \strokec6 0\cf4 \strokec4 ]\cb1 \
+\cb3     lo = \cf11 \strokec11 int\cf4 \strokec4 (fs * \cf6 \strokec6 60.0\cf4 \strokec4  / cfg[\cf5 \strokec5 'ecg_hr_range_bpm'\cf4 \strokec4 ][\cf6 \strokec6 1\cf4 \strokec4 ])\cb1 \
+\cb3     hi = \cf11 \strokec11 int\cf4 \strokec4 (fs * \cf6 \strokec6 60.0\cf4 \strokec4  / cfg[\cf5 \strokec5 'ecg_hr_range_bpm'\cf4 \strokec4 ][\cf6 \strokec6 0\cf4 \strokec4 ])\cb1 \
+\cb3     lag = lo + \cf11 \strokec11 int\cf4 \strokec4 (np.argmax(ac[lo:hi]))\cb1 \
+\cb3     pk, _ = signal.find_peaks(q, height=thr, distance=\cf11 \strokec11 int\cf4 \strokec4 (\cf6 \strokec6 0.6\cf4 \strokec4  * lag))\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  lag / fs, \cf11 \strokec11 float\cf4 \strokec4 (ac[lag]), pk\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 ecg_template_subtract\cf4 \strokec4 (\cf10 \strokec10 x\cf4 \strokec4 , \cf10 \strokec10 peaks\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 win\cf4 \strokec4 , \cf10 \strokec10 min_corr\cf4 \strokec4 , \cf10 \strokec10 max_shift_s\cf4 \strokec4 =\cf6 \strokec6 0.010\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     \cf5 \strokec5 """Sottrazione di template QRS con allineamento fine (+-10 ms) e scala per battito."""\cf4 \cb1 \strokec4 \
+\cb3     pre, post = \cf11 \strokec11 int\cf4 \strokec4 (win[\cf6 \strokec6 0\cf4 \strokec4 ] * fs), \cf11 \strokec11 int\cf4 \strokec4 (win[\cf6 \strokec6 1\cf4 \strokec4 ] * fs)\cb1 \
+\cb3     ms = \cf11 \strokec11 int\cf4 \strokec4 (max_shift_s * fs)\cb1 \
+\cb3     L = pre + post\cb1 \
+\cb3     P = [p \cf8 \strokec8 for\cf4 \strokec4  p \cf7 \strokec7 in\cf4 \strokec4  peaks \cf8 \strokec8 if\cf4 \strokec4  p - pre - ms >= \cf6 \strokec6 0\cf4 \strokec4  \cf7 \strokec7 and\cf4 \strokec4  p + post + ms < \cf9 \strokec9 len\cf4 \strokec4 (x)]\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  \cf9 \strokec9 len\cf4 \strokec4 (P) < \cf6 \strokec6 5\cf4 \strokec4 : \cf8 \strokec8 return\cf4 \strokec4  x.copy(), \cf7 \strokec7 None\cf4 \cb1 \strokec4 \
+\cb3     seg = \cf7 \strokec7 lambda\cf4 \strokec4  p: x[p - pre:p + post]\cb1 \
+\cb3     tpl = np.median(np.array([seg(p) \cf8 \strokec8 for\cf4 \strokec4  p \cf7 \strokec7 in\cf4 \strokec4  P]), axis=\cf6 \strokec6 0\cf4 \strokec4 )\cb1 \
+\cb3     shifts = np.arange(-ms, ms + \cf6 \strokec6 1\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  _ \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 range\cf4 \strokec4 (\cf6 \strokec6 3\cf4 \strokec4 ):\cb1 \
+\cb3         best = []\cb1 \
+\cb3         \cf8 \strokec8 for\cf4 \strokec4  p \cf7 \strokec7 in\cf4 \strokec4  P:\cb1 \
+\cb3             c = [np.corrcoef(seg(p + s), tpl)[\cf6 \strokec6 0\cf4 \strokec4 , \cf6 \strokec6 1\cf4 \strokec4 ] \cf8 \strokec8 for\cf4 \strokec4  s \cf7 \strokec7 in\cf4 \strokec4  shifts]\cb1 \
+\cb3             j = \cf11 \strokec11 int\cf4 \strokec4 (np.nanargmax(c))\cb1 \
+\cb3             best.append((shifts[j], c[j]))\cb1 \
+\cb3         sh = np.array([b[\cf6 \strokec6 0\cf4 \strokec4 ] \cf8 \strokec8 for\cf4 \strokec4  b \cf7 \strokec7 in\cf4 \strokec4  best])\cb1 \
+\cb3         r = np.array([b[\cf6 \strokec6 1\cf4 \strokec4 ] \cf8 \strokec8 for\cf4 \strokec4  b \cf7 \strokec7 in\cf4 \strokec4  best])\cb1 \
+\cb3         ok = r >= min_corr\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  ok.\cf9 \strokec9 sum\cf4 \strokec4 () < \cf6 \strokec6 5\cf4 \strokec4 : \cf8 \strokec8 return\cf4 \strokec4  x.copy(), \cf7 \strokec7 None\cf4 \cb1 \strokec4 \
+\cb3         S = np.array([seg(p + s) \cf8 \strokec8 for\cf4 \strokec4  p, s, o \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 zip\cf4 \strokec4 (P, sh, ok) \cf8 \strokec8 if\cf4 \strokec4  o])\cb1 \
+\cb3         tpl, tpl_sd = S.mean(\cf6 \strokec6 0\cf4 \strokec4 ), S.std(\cf6 \strokec6 0\cf4 \strokec4 )\cb1 \
+\cb3     taper = signal.windows.tukey(L, \cf6 \strokec6 0.3\cf4 \strokec4 )\cb1 \
+\cb3     y = x.copy()\cb1 \
+\cb3     ratio = []\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  p, s, o \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 zip\cf4 \strokec4 (P, sh, ok):\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  o: \cf8 \strokec8 continue\cf4 \cb1 \strokec4 \
+\cb3         i0 = p + s - pre\cb1 \
+\cb3         sg = x[i0:i0 + L]\cb1 \
+\cb3         a = \cf9 \strokec9 max\cf4 \strokec4 (\cf11 \strokec11 float\cf4 \strokec4 (sg @ tpl / (tpl @ tpl)), \cf6 \strokec6 0.0\cf4 \strokec4 )\cb1 \
+\cb3         y[i0:i0 + L] = sg - a * tpl * taper\cb1 \
+\cb3         ratio.append(np.ptp(y[i0:i0 + L]) / \cf9 \strokec9 max\cf4 \strokec4 (np.ptp(sg), \cf6 \strokec6 1e-12\cf4 \strokec4 ))\cb1 \
+\cb3     t_beats = np.array([(p + s) / fs \cf8 \strokec8 for\cf4 \strokec4  p, s, o \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 zip\cf4 \strokec4 (P, sh, ok) \cf8 \strokec8 if\cf4 \strokec4  o])\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  y, \cf11 \strokec11 dict\cf4 \strokec4 (tpl=tpl, tpl_sd=tpl_sd, t_beats=t_beats, n_used=\cf11 \strokec11 int\cf4 \strokec4 (ok.\cf9 \strokec9 sum\cf4 \strokec4 ()), n_cand=\cf9 \strokec9 len\cf4 \strokec4 (P),\cb1 \
+\cb3                    resid=\cf11 \strokec11 float\cf4 \strokec4 (np.median(ratio)) \cf8 \strokec8 if\cf4 \strokec4  ratio \cf8 \strokec8 else\cf4 \strokec4  np.nan, pre=pre, post=post)\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 remove_ecg\cf4 \strokec4 (\cf10 \strokec10 filt\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 cfg\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     info = \cf11 \strokec11 dict\cf4 \strokec4 (method=cfg[\cf5 \strokec5 'ecg_method'\cf4 \strokec4 ])\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  cfg[\cf5 \strokec5 'ecg_method'\cf4 \strokec4 ] == \cf5 \strokec5 'none'\cf4 \strokec4 : \cf8 \strokec8 return\cf4 \strokec4  filt, info\cb1 \
+\cb3     rr, acv, pk = ecg_find_beats(filt, fs, cfg)\cb1 \
+\cb3     info.update(rr_s=rr, hr_autocorr=\cf6 \strokec6 60.0\cf4 \strokec4  / rr, ac_peak=acv, n_cand=\cf9 \strokec9 len\cf4 \strokec4 (pk))\cb1 \
+\cb3     cleaned, per_ch = [], []\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  x \cf7 \strokec7 in\cf4 \strokec4  filt:\cb1 \
+\cb3         y, inf = ecg_template_subtract(x, pk, fs, cfg[\cf5 \strokec5 'ecg_win'\cf4 \strokec4 ], cfg[\cf5 \strokec5 'ecg_min_corr'\cf4 \strokec4 ])\cb1 \
+\cb3         cleaned.append(y)\cb1 \
+\cb3         per_ch.append(inf)\cb1 \
+\cb3     info[\cf5 \strokec5 'per_ch'\cf4 \strokec4 ] = per_ch\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  per_ch[\cf6 \strokec6 0\cf4 \strokec4 ] \cf7 \strokec7 is\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  \cf7 \strokec7 None\cf4 \strokec4 :\cb1 \
+\cb3         tb = np.sort(per_ch[\cf6 \strokec6 0\cf4 \strokec4 ][\cf5 \strokec5 't_beats'\cf4 \strokec4 ])\cb1 \
+\cb3         rri = np.diff(tb)\cb1 \
+\cb3         rri = rri[(rri > \cf6 \strokec6 0.4\cf4 \strokec4  * rr) & (rri < \cf6 \strokec6 1.6\cf4 \strokec4  * rr)]\cb1 \
+\cb3         info[\cf5 \strokec5 't_beats'\cf4 \strokec4 ] = tb\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  \cf9 \strokec9 len\cf4 \strokec4 (rri): info[\cf5 \strokec5 'hr_bpm'\cf4 \strokec4 ] = \cf6 \strokec6 60.0\cf4 \strokec4  / np.median(rri)\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  cleaned, info\cb1 \
+\
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # METODI DI ONSET DETECTION\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 baseline_interval\cf4 \strokec4 (\cf10 \strokec10 t\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 t_a\cf4 \strokec4 , \cf10 \strokec10 t_b\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     a, b = np.searchsorted(t, t_a), np.searchsorted(t, t_b)\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  b - a >= \cf11 \strokec11 int\cf4 \strokec4 (\cf6 \strokec6 0.5\cf4 \strokec4  * fs): \cf8 \strokec8 return\cf4 \strokec4  a, b\cb1 \
+\cb3     \cf8 \strokec8 raise\cf4 \strokec4  \cf11 \strokec11 ValueError\cf4 \strokec4 (\cf5 \strokec5 "Fase Preparation troppo corta."\cf4 \strokec4 )\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 tkeo_smooth\cf4 \strokec4 (\cf10 \strokec10 x\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 lp_hz\cf4 \strokec4 , \cf10 \strokec10 use_sqrt\cf4 \strokec4 =\cf7 \strokec7 True\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     t = np.zeros_like(x)\cb1 \
+\cb3     t[\cf6 \strokec6 1\cf4 \strokec4 :\cf6 \strokec6 -1\cf4 \strokec4 ] = x[\cf6 \strokec6 1\cf4 \strokec4 :\cf6 \strokec6 -1\cf4 \strokec4 ] ** \cf6 \strokec6 2\cf4 \strokec4  - x[:\cf6 \strokec6 -2\cf4 \strokec4 ] * x[\cf6 \strokec6 2\cf4 \strokec4 :]\cb1 \
+\cb3     t[\cf6 \strokec6 0\cf4 \strokec4 ], t[\cf6 \strokec6 -1\cf4 \strokec4 ] = t[\cf6 \strokec6 1\cf4 \strokec4 ], t[\cf6 \strokec6 -2\cf4 \strokec4 ]\cb1 \
+\cb3     p = np.sqrt(np.\cf9 \strokec9 abs\cf4 \strokec4 (t)) \cf8 \strokec8 if\cf4 \strokec4  use_sqrt \cf8 \strokec8 else\cf4 \strokec4  np.\cf9 \strokec9 abs\cf4 \strokec4 (t)\cb1 \
+\cb3     sos = signal.butter(\cf6 \strokec6 4\cf4 \strokec4 , lp_hz, btype=\cf5 \strokec5 'lowpass'\cf4 \strokec4 , fs=fs, output=\cf5 \strokec5 'sos'\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  np.clip(signal.sosfiltfilt(sos, p), \cf6 \strokec6 0\cf4 \strokec4 , \cf7 \strokec7 None\cf4 \strokec4 )\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 detect_onset_tkeo\cf4 \strokec4 (\cf10 \strokec10 x\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 base\cf4 \strokec4 , \cf10 \strokec10 k\cf4 \strokec4 , \cf10 \strokec10 min_dur_s\cf4 \strokec4 , \cf10 \strokec10 min_gap_s\cf4 \strokec4 , \cf10 \strokec10 lp_hz\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     p = tkeo_smooth(x, fs, lp_hz, CFG[\cf5 \strokec5 'tkeo_sqrt'\cf4 \strokec4 ])\cb1 \
+\cb3     th = p[base[\cf6 \strokec6 0\cf4 \strokec4 ]:base[\cf6 \strokec6 1\cf4 \strokec4 ]].mean() + k * p[base[\cf6 \strokec6 0\cf4 \strokec4 ]:base[\cf6 \strokec6 1\cf4 \strokec4 ]].std()\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  filter_durations(p > th, fs, min_dur_s, min_gap_s), th, p\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 detect_onset_logvar\cf4 \strokec4 (\cf10 \strokec10 x\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 base\cf4 \strokec4 , \cf10 \strokec10 window_s\cf4 \strokec4 , \cf10 \strokec10 k\cf4 \strokec4 , \cf10 \strokec10 min_dur_s\cf4 \strokec4 , \cf10 \strokec10 min_gap_s\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     \cf5 \strokec5 """Log-varianza a breve termine (ex 'entropia': non e' un'entropia).\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf5 \cb3 \strokec5     Passa-alto 30 Hz -> varianza su finestra window_s -> logaritmo -> lisciatura 20 ms.\cf4 \cb1 \strokec4 \
+\cf5 \cb3 \strokec5     Soglia = media + k*SD sulla baseline."""\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     win_pts = \cf11 \strokec11 int\cf4 \strokec4 (window_s * fs)\cb1 \
+\cb3     sos_hp = signal.butter(\cf6 \strokec6 4\cf4 \strokec4 , \cf6 \strokec6 30.0\cf4 \strokec4 , btype=\cf5 \strokec5 'highpass'\cf4 \strokec4 , fs=fs, output=\cf5 \strokec5 'sos'\cf4 \strokec4 )\cb1 \
+\cb3     sq = signal.sosfiltfilt(sos_hp, x) ** \cf6 \strokec6 2\cf4 \cb1 \strokec4 \
+\cb3     H = np.log(uniform_filter1d(sq, size=win_pts) + \cf6 \strokec6 1e-12\cf4 \strokec4 )\cb1 \
+\cb3     H_smooth = uniform_filter1d(H, size=\cf11 \strokec11 int\cf4 \strokec4 (\cf6 \strokec6 0.02\cf4 \strokec4  * fs))\cb1 \
+\cb3     th = H_smooth[base[\cf6 \strokec6 0\cf4 \strokec4 ]:base[\cf6 \strokec6 1\cf4 \strokec4 ]].mean() + k * H_smooth[base[\cf6 \strokec6 0\cf4 \strokec4 ]:base[\cf6 \strokec6 1\cf4 \strokec4 ]].std()\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  filter_durations(H_smooth > th, fs, min_dur_s, min_gap_s), th, H_smooth\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 confirm_tkeo_with_logvar\cf4 \strokec4 (\cf10 \strokec10 act_tk\cf4 \strokec4 , \cf10 \strokec10 act_lv\cf4 \strokec4 , \cf10 \strokec10 min_frac\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     \cf5 \strokec5 """La log-varianza CONFERMA i burst del TKEO: un burst TKEO e' accettato se la\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf5 \cb3 \strokec5     log-varianza e' attiva per almeno min_frac della sua durata. Onset e offset restano\cf4 \cb1 \strokec4 \
+\cf5 \cb3 \strokec5     quelli del TKEO (piu' precisi nel tempo: la log-varianza e' lisciata su ~70 ms)."""\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     confirmed = np.zeros_like(act_tk, dtype=\cf11 \strokec11 bool\cf4 \strokec4 )\cb1 \
+\cb3     rows = []\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  a, b \cf7 \strokec7 in\cf4 \strokec4  runs(act_tk):\cb1 \
+\cb3         frac = \cf11 \strokec11 float\cf4 \strokec4 (act_lv[a:b].mean())\cb1 \
+\cb3         ok = frac >= min_frac \cf7 \strokec7 and\cf4 \strokec4  frac > \cf6 \strokec6 0\cf4 \cb1 \strokec4 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  ok: confirmed[a:b] = \cf7 \strokec7 True\cf4 \cb1 \strokec4 \
+\cb3         rows.append((a, b, frac, ok))\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  confirmed, rows\cb1 \
+\
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # STATISTICHE E SINERGIE\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 classify_intervals\cf4 \strokec4 (\cf10 \strokec10 act_ch1\cf4 \strokec4 , \cf10 \strokec10 act_ch2\cf4 \strokec4 , \cf10 \strokec10 time_axis\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 env_ch1\cf4 \strokec4 , \cf10 \strokec10 env_ch2\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     intervals = []\cb1 \
+\cb3     n, i, min_overlap_pts, sync_tol_pts = \cf9 \strokec9 len\cf4 \strokec4 (time_axis), \cf6 \strokec6 0\cf4 \strokec4 , \cf11 \strokec11 int\cf4 \strokec4 (CFG[\cf5 \strokec5 'min_overlap_s'\cf4 \strokec4 ] * fs), \cf11 \strokec11 int\cf4 \strokec4 (CFG[\cf5 \strokec5 'sync_tol_s'\cf4 \strokec4 ] * fs)\cb1 \
+\cb3     any_active = act_ch1 | act_ch2\cb1 \
+\
+\cb3     \cf8 \strokec8 while\cf4 \strokec4  i < n:\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  any_active[i]:\cb1 \
+\cb3             i += \cf6 \strokec6 1\cf4 \cb1 \strokec4 \
+\cb3             \cf8 \strokec8 continue\cf4 \cb1 \strokec4 \
+\cb3         start_idx = i\cb1 \
+\cb3         \cf8 \strokec8 while\cf4 \strokec4  i < n \cf7 \strokec7 and\cf4 \strokec4  any_active[i]: i += \cf6 \strokec6 1\cf4 \cb1 \strokec4 \
+\cb3         end_idx = i - \cf6 \strokec6 1\cf4 \cb1 \strokec4 \
+\
+\cb3         sub1, sub2 = act_ch1[start_idx:end_idx+\cf6 \strokec6 1\cf4 \strokec4 ], act_ch2[start_idx:end_idx+\cf6 \strokec6 1\cf4 \strokec4 ]\cb1 \
+\cb3         h1, h2 = np.\cf9 \strokec9 any\cf4 \strokec4 (sub1), np.\cf9 \strokec9 any\cf4 \strokec4 (sub2)\cb1 \
+\cb3         t_start, t_end = time_axis[start_idx], time_axis[end_idx]\cb1 \
+\
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  h1 \cf7 \strokec7 and\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  h2: intervals.append(\{\cf5 \strokec5 "start"\cf4 \strokec4 : t_start, \cf5 \strokec5 "end"\cf4 \strokec4 : t_end, \cf5 \strokec5 "class"\cf4 \strokec4 : \cf5 \strokec5 "solo_CH1"\cf4 \strokec4 , \cf5 \strokec5 "anticipo"\cf4 \strokec4 : \cf5 \strokec5 "CH1"\cf4 \strokec4 , \cf5 \strokec5 "latenza_ms"\cf4 \strokec4 : \cf6 \strokec6 0.0\cf4 \strokec4 \})\cb1 \
+\cb3         \cf8 \strokec8 elif\cf4 \strokec4  h2 \cf7 \strokec7 and\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  h1: intervals.append(\{\cf5 \strokec5 "start"\cf4 \strokec4 : t_start, \cf5 \strokec5 "end"\cf4 \strokec4 : t_end, \cf5 \strokec5 "class"\cf4 \strokec4 : \cf5 \strokec5 "solo_CH2"\cf4 \strokec4 , \cf5 \strokec5 "anticipo"\cf4 \strokec4 : \cf5 \strokec5 "CH2"\cf4 \strokec4 , \cf5 \strokec5 "latenza_ms"\cf4 \strokec4 : \cf6 \strokec6 0.0\cf4 \strokec4 \})\cb1 \
+\cb3         \cf8 \strokec8 elif\cf4 \strokec4  h1 \cf7 \strokec7 and\cf4 \strokec4  h2:\cb1 \
+\cb3             i1, i2 = np.where(sub1)[\cf6 \strokec6 0\cf4 \strokec4 ][\cf6 \strokec6 0\cf4 \strokec4 ], np.where(sub2)[\cf6 \strokec6 0\cf4 \strokec4 ][\cf6 \strokec6 0\cf4 \strokec4 ]\cb1 \
+\cb3             diff_pts = i2 - i1\cb1 \
+\cb3             lat_ms = (diff_pts / fs) * \cf6 \strokec6 1000.0\cf4 \cb1 \strokec4 \
+\cb3             ant = \cf5 \strokec5 "sincrono"\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  \cf9 \strokec9 abs\cf4 \strokec4 (diff_pts) <= sync_tol_pts \cf8 \strokec8 else\cf4 \strokec4  (\cf5 \strokec5 "CH1"\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  diff_pts > \cf6 \strokec6 0\cf4 \strokec4  \cf8 \strokec8 else\cf4 \strokec4  \cf5 \strokec5 "CH2"\cf4 \strokec4 )\cb1 \
+\
+\cb3             \cf8 \strokec8 if\cf4 \strokec4  np.\cf9 \strokec9 sum\cf4 \strokec4 (sub1 & sub2) >= min_overlap_pts:\cb1 \
+\cb3                 intervals.append(\{\cf5 \strokec5 "start"\cf4 \strokec4 : t_start, \cf5 \strokec5 "end"\cf4 \strokec4 : t_end, \cf5 \strokec5 "class"\cf4 \strokec4 : \cf5 \strokec5 "co-attivazione"\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  \cf9 \strokec9 abs\cf4 \strokec4 (diff_pts) <= sync_tol_pts \cf8 \strokec8 else\cf4 \strokec4  \cf5 \strokec5 "sequenziale"\cf4 \strokec4 , \cf5 \strokec5 "anticipo"\cf4 \strokec4 : ant, \cf5 \strokec5 "latenza_ms"\cf4 \strokec4 : lat_ms\})\cb1 \
+\cb3             \cf8 \strokec8 else\cf4 \strokec4 :\cb1 \
+\cb3                 \cf8 \strokec8 if\cf4 \strokec4  i1 < i2:\cb1 \
+\cb3                     intervals.extend([\{\cf5 \strokec5 "start"\cf4 \strokec4 : t_start, \cf5 \strokec5 "end"\cf4 \strokec4 : time_axis[start_idx+np.where(sub1)[\cf6 \strokec6 0\cf4 \strokec4 ][\cf6 \strokec6 -1\cf4 \strokec4 ]], \cf5 \strokec5 "class"\cf4 \strokec4 : \cf5 \strokec5 "solo_CH1"\cf4 \strokec4 , \cf5 \strokec5 "anticipo"\cf4 \strokec4 : \cf5 \strokec5 "CH1"\cf4 \strokec4 , \cf5 \strokec5 "latenza_ms"\cf4 \strokec4 : \cf6 \strokec6 0.0\cf4 \strokec4 \},\cb1 \
+\cb3                                       \{\cf5 \strokec5 "start"\cf4 \strokec4 : time_axis[start_idx+i2], \cf5 \strokec5 "end"\cf4 \strokec4 : t_end, \cf5 \strokec5 "class"\cf4 \strokec4 : \cf5 \strokec5 "solo_CH2"\cf4 \strokec4 , \cf5 \strokec5 "anticipo"\cf4 \strokec4 : \cf5 \strokec5 "CH2"\cf4 \strokec4 , \cf5 \strokec5 "latenza_ms"\cf4 \strokec4 : \cf6 \strokec6 0.0\cf4 \strokec4 \}])\cb1 \
+\cb3                 \cf8 \strokec8 else\cf4 \strokec4 :\cb1 \
+\cb3                     intervals.extend([\{\cf5 \strokec5 "start"\cf4 \strokec4 : t_start, \cf5 \strokec5 "end"\cf4 \strokec4 : time_axis[start_idx+np.where(sub2)[\cf6 \strokec6 0\cf4 \strokec4 ][\cf6 \strokec6 -1\cf4 \strokec4 ]], \cf5 \strokec5 "class"\cf4 \strokec4 : \cf5 \strokec5 "solo_CH2"\cf4 \strokec4 , \cf5 \strokec5 "anticipo"\cf4 \strokec4 : \cf5 \strokec5 "CH2"\cf4 \strokec4 , \cf5 \strokec5 "latenza_ms"\cf4 \strokec4 : \cf6 \strokec6 0.0\cf4 \strokec4 \},\cb1 \
+\cb3                                       \{\cf5 \strokec5 "start"\cf4 \strokec4 : time_axis[start_idx+i1], \cf5 \strokec5 "end"\cf4 \strokec4 : t_end, \cf5 \strokec5 "class"\cf4 \strokec4 : \cf5 \strokec5 "solo_CH1"\cf4 \strokec4 , \cf5 \strokec5 "anticipo"\cf4 \strokec4 : \cf5 \strokec5 "CH1"\cf4 \strokec4 , \cf5 \strokec5 "latenza_ms"\cf4 \strokec4 : \cf6 \strokec6 0.0\cf4 \strokec4 \}])\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  pd.DataFrame(intervals)\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 analyze_synergies\cf4 \strokec4 (\cf10 \strokec10 env_norm\cf4 \strokec4 , \cf10 \strokec10 fs\cf4 \strokec4 , \cf10 \strokec10 active\cf4 \strokec4 =\cf7 \strokec7 None\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     V = env_norm \cf8 \strokec8 if\cf4 \strokec4  active \cf7 \strokec7 is\cf4 \strokec4  \cf7 \strokec7 None\cf4 \strokec4  \cf8 \strokec8 else\cf4 \strokec4  env_norm[active]\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  \cf9 \strokec9 len\cf4 \strokec4 (V) < CFG[\cf5 \strokec5 'nmf_min_attivo_s'\cf4 \strokec4 ] * fs \cf7 \strokec7 or\cf4 \strokec4  V.\cf9 \strokec9 sum\cf4 \strokec4 () <= \cf6 \strokec6 0\cf4 \strokec4 : \cf8 \strokec8 return\cf4 \strokec4  \cf7 \strokec7 None\cf4 \strokec4 , \cf7 \strokec7 None\cf4 \strokec4 , np.nan\cb1 \
+\cb3     U, S, Vt = np.linalg.svd(V, full_matrices=\cf7 \strokec7 False\cf4 \strokec4 )\cb1 \
+\cb3     sgn = \cf6 \strokec6 1.0\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  Vt[\cf6 \strokec6 0\cf4 \strokec4 ].\cf9 \strokec9 sum\cf4 \strokec4 () >= \cf6 \strokec6 0\cf4 \strokec4  \cf8 \strokec8 else\cf4 \strokec4  \cf6 \strokec6 -1.0\cf4 \cb1 \strokec4 \
+\cb3     H = np.clip(sgn * Vt[\cf6 \strokec6 0\cf4 \strokec4 ], \cf6 \strokec6 0\cf4 \strokec4 , \cf7 \strokec7 None\cf4 \strokec4 )[\cf7 \strokec7 None\cf4 \strokec4 , :]\cb1 \
+\cb3     W = np.clip(sgn * U[:, \cf6 \strokec6 0\cf4 \strokec4 ] * S[\cf6 \strokec6 0\cf4 \strokec4 ], \cf6 \strokec6 0\cf4 \strokec4 , \cf7 \strokec7 None\cf4 \strokec4 )[:, \cf7 \strokec7 None\cf4 \strokec4 ]\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  W, H / H.\cf9 \strokec9 max\cf4 \strokec4 (), \cf6 \strokec6 1.0\cf4 \strokec4  - np.\cf9 \strokec9 sum\cf4 \strokec4 ((V - W @ H) ** \cf6 \strokec6 2\cf4 \strokec4 ) / np.\cf9 \strokec9 sum\cf4 \strokec4 (V ** \cf6 \strokec6 2\cf4 \strokec4 )\cb1 \
+\
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 run_pipeline_for_phase\cf4 \strokec4 (\cf10 \strokec10 name\cf4 \strokec4 , \cf10 \strokec10 sel\cf4 \strokec4 , \cf10 \strokec10 D\cf4 \strokec4 , \cf10 \strokec10 log_out\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     log_out.append(\cf7 \strokec7 f\cf5 \strokec5 "\\n--- ANALISI FASE: \cf4 \strokec4 \{name\}\cf5 \strokec5  ---"\cf4 \strokec4 )\cb1 \
+\cb3     fs = D[\cf5 \strokec5 'fs'\cf4 \strokec4 ]\cb1 \
+\cb3     tp = D[\cf5 \strokec5 't'\cf4 \strokec4 ][sel]\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  \cf9 \strokec9 len\cf4 \strokec4 (tp) < \cf6 \strokec6 10\cf4 \strokec4 :\cb1 \
+\cb3         log_out.append(\cf5 \strokec5 "  [!] Dati insufficienti."\cf4 \strokec4 )\cb1 \
+\cb3         \cf8 \strokec8 return\cf4 \strokec4  \cf7 \strokec7 None\cf4 \cb1 \strokec4 \
+\
+\cb3     act = \{c: D[\cf5 \strokec5 'act'\cf4 \strokec4 ][c][sel] \cf8 \strokec8 for\cf4 \strokec4  c \cf7 \strokec7 in\cf4 \strokec4  CH_NAMES\}\cb1 \
+\cb3     envn = \{c: D[\cf5 \strokec5 'env_n'\cf4 \strokec4 ][c][sel] \cf8 \strokec8 for\cf4 \strokec4  c \cf7 \strokec7 in\cf4 \strokec4  CH_NAMES\}\cb1 \
+\cb3     df_patterns = classify_intervals(act[\cf5 \strokec5 'CH1'\cf4 \strokec4 ], act[\cf5 \strokec5 'CH2'\cf4 \strokec4 ], tp, fs, envn[\cf5 \strokec5 'CH1'\cf4 \strokec4 ], envn[\cf5 \strokec5 'CH2'\cf4 \strokec4 ])\cb1 \
+\
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  df_patterns.empty:\cb1 \
+\cb3         log_out.append(\cf7 \strokec7 f\cf5 \strokec5 "  Totale Pattern Rilevati: \cf4 \strokec4 \{\cf9 \strokec9 len\cf4 \strokec4 (df_patterns)\}\cf5 \strokec5 "\cf4 \strokec4 )\cb1 \
+\cb3         \cf8 \strokec8 for\cf4 \strokec4  k, v \cf7 \strokec7 in\cf4 \strokec4  df_patterns[\cf5 \strokec5 'class'\cf4 \strokec4 ].value_counts().items():\cb1 \
+\cb3             log_out.append(\cf7 \strokec7 f\cf5 \strokec5 "    - \cf4 \strokec4 \{k\}\cf5 \strokec5 : \cf4 \strokec4 \{v\}\cf5 \strokec5  episodi"\cf4 \strokec4 )\cb1 \
+\
+\cb3         \cf2 \strokec2 # === REPORT TESTUALE ANTICIPI (NUOVO) ===\cf4 \cb1 \strokec4 \
+\cb3         coacts = df_patterns[df_patterns[\cf5 \strokec5 'class'\cf4 \strokec4 ].isin([\cf5 \strokec5 'co-attivazione'\cf4 \strokec4 , \cf5 \strokec5 'sequenziale'\cf4 \strokec4 ])]\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  coacts.empty:\cb1 \
+\cb3             log_out.append(\cf5 \strokec5 "  [Timing] Dettaglio Anticipi (su interazioni):"\cf4 \strokec4 )\cb1 \
+\cb3             \cf8 \strokec8 for\cf4 \strokec4  k, v \cf7 \strokec7 in\cf4 \strokec4  coacts[\cf5 \strokec5 'anticipo'\cf4 \strokec4 ].value_counts().items():\cb1 \
+\cb3                 \cf8 \strokec8 if\cf4 \strokec4  k == \cf5 \strokec5 "sincrono"\cf4 \strokec4 : log_out.append(\cf7 \strokec7 f\cf5 \strokec5 "    - Attivazioni Sincrone (tol. \cf4 \strokec4 \{CFG[\cf5 \strokec5 'sync_tol_s'\cf4 \strokec4 ]*\cf6 \strokec6 1000:.0f\cf4 \strokec4 \}\cf5 \strokec5 ms): \cf4 \strokec4 \{v\}\cf5 \strokec5 "\cf4 \strokec4 )\cb1 \
+\cb3                 \cf8 \strokec8 else\cf4 \strokec4 : log_out.append(\cf7 \strokec7 f\cf5 \strokec5 "    - \cf4 \strokec4 \{k\}\cf5 \strokec5  si attiva prima: \cf4 \strokec4 \{v\}\cf5 \strokec5  volte"\cf4 \strokec4 )\cb1 \
+\
+\cb3             lat_reali = coacts[coacts[\cf5 \strokec5 'anticipo'\cf4 \strokec4 ] != \cf5 \strokec5 "sincrono"\cf4 \strokec4 ][\cf5 \strokec5 'latenza_ms'\cf4 \strokec4 ].\cf9 \strokec9 abs\cf4 \strokec4 ()\cb1 \
+\cb3             \cf8 \strokec8 if\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  lat_reali.empty:\cb1 \
+\cb3                 log_out.append(\cf7 \strokec7 f\cf5 \strokec5 "    - Latenza media di ritardo: \cf4 \strokec4 \{lat_reali.mean()\cf6 \strokec6 :.1f\cf4 \strokec4 \}\cf5 \strokec5  ms (max: \cf4 \strokec4 \{lat_reali.\cf9 \strokec9 max\cf4 \strokec4 ()\cf6 \strokec6 :.1f\cf4 \strokec4 \}\cf5 \strokec5  ms)"\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 else\cf4 \strokec4 :\cb1 \
+\cb3         log_out.append(\cf5 \strokec5 "  Nessuna attivazione rilevata."\cf4 \strokec4 )\cb1 \
+\
+\cb3     active_any = (act[\cf5 \strokec5 'CH1'\cf4 \strokec4 ] | act[\cf5 \strokec5 'CH2'\cf4 \strokec4 ]) \cf8 \strokec8 if\cf4 \strokec4  CFG[\cf5 \strokec5 'nmf_solo_attivi'\cf4 \strokec4 ] \cf8 \strokec8 else\cf4 \strokec4  \cf7 \strokec7 None\cf4 \cb1 \strokec4 \
+\cb3     W, H, vaf = analyze_synergies(np.column_stack([envn[\cf5 \strokec5 'CH1'\cf4 \strokec4 ], envn[\cf5 \strokec5 'CH2'\cf4 \strokec4 ]]), fs, active_any)\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  H \cf7 \strokec7 is\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  \cf7 \strokec7 None\cf4 \strokec4 :\cb1 \
+\cb3         log_out.append(\cf7 \strokec7 f\cf5 \strokec5 "  Sinergia (NMF) - VAF: \cf4 \strokec4 \{vaf*\cf6 \strokec6 100:.2f\cf4 \strokec4 \}\cf5 \strokec5 % \cf4 \strokec4 |\cf5 \strokec5  Pesi: CH1=\cf4 \strokec4 \{H[\cf6 \strokec6 0\cf4 \strokec4 ][\cf6 \strokec6 0\cf4 \strokec4 ]\cf6 \strokec6 :.3f\cf4 \strokec4 \}\cf5 \strokec5 , CH2=\cf4 \strokec4 \{H[\cf6 \strokec6 0\cf4 \strokec4 ][\cf6 \strokec6 1\cf4 \strokec4 ]\cf6 \strokec6 :.3f\cf4 \strokec4 \}\cf5 \strokec5 "\cf4 \strokec4 )\cb1 \
+\
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  \{\cf5 \strokec5 "patterns"\cf4 \strokec4 : df_patterns, \cf5 \strokec5 "vaf"\cf4 \strokec4 : vaf, \cf5 \strokec5 "weights"\cf4 \strokec4 : H, \cf5 \strokec5 "sel"\cf4 \strokec4 : sel\}\cb1 \
+\
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # REPORT AGGIUNTIVI (v4): tabella burst, grafico ECG, diagnostica detector\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 build_burst_table\cf4 \strokec4 (\cf10 \strokec10 D\cf4 \strokec4 , \cf10 \strokec10 fasi_dict\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     \cf5 \strokec5 """Un record per ogni burst TKEO (confermato o no) con ampiezze in mV e normalizzate."""\cf4 \cb1 \strokec4 \
+\cb3     t, rows = D[\cf5 \strokec5 't'\cf4 \strokec4 ], []\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  c \cf7 \strokec7 in\cf4 \strokec4  CH_NAMES:\cb1 \
+\cb3         \cf8 \strokec8 for\cf4 \strokec4  a, b, frac, ok \cf7 \strokec7 in\cf4 \strokec4  D[\cf5 \strokec5 'conf'\cf4 \strokec4 ][c]:\cb1 \
+\cb3             seg, segn = D[\cf5 \strokec5 'env_mV'\cf4 \strokec4 ][c][a:b], D[\cf5 \strokec5 'env_n'\cf4 \strokec4 ][c][a:b]\cb1 \
+\cb3             \cf8 \strokec8 try\cf4 \strokec4 : area = np.trapezoid(seg, dx=\cf6 \strokec6 1.0\cf4 \strokec4  / D[\cf5 \strokec5 'fs'\cf4 \strokec4 ])\cb1 \
+\cb3             \cf8 \strokec8 except\cf4 \strokec4  AttributeError: area = np.trapz(seg, dx=\cf6 \strokec6 1.0\cf4 \strokec4  / D[\cf5 \strokec5 'fs'\cf4 \strokec4 ])\cb1 \
+\cb3             fase = \cf9 \strokec9 next\cf4 \strokec4 ((n \cf8 \strokec8 for\cf4 \strokec4  n, s \cf7 \strokec7 in\cf4 \strokec4  fasi_dict.items() \cf8 \strokec8 if\cf4 \strokec4  s[a]), \cf5 \strokec5 "fuori finestra"\cf4 \strokec4 )\cb1 \
+\cb3             rows.append(\{\cf5 \strokec5 "canale"\cf4 \strokec4 : c, \cf5 \strokec5 "fase"\cf4 \strokec4 : fase, \cf5 \strokec5 "onset_s"\cf4 \strokec4 : t[a], \cf5 \strokec5 "offset_s"\cf4 \strokec4 : t[b - \cf6 \strokec6 1\cf4 \strokec4 ],\cb1 \
+\cb3                          \cf5 \strokec5 "durata_s"\cf4 \strokec4 : (b - a) / D[\cf5 \strokec5 'fs'\cf4 \strokec4 ], \cf5 \strokec5 "amp_max_mV"\cf4 \strokec4 : seg.\cf9 \strokec9 max\cf4 \strokec4 (), \cf5 \strokec5 "amp_mean_mV"\cf4 \strokec4 : seg.mean(),\cb1 \
+\cb3                          \cf5 \strokec5 "area_mV_s"\cf4 \strokec4 : area, \cf5 \strokec5 "amp_max_norm"\cf4 \strokec4 : segn.\cf9 \strokec9 max\cf4 \strokec4 (), \cf5 \strokec5 "amp_mean_norm"\cf4 \strokec4 : segn.mean(),\cb1 \
+\cb3                          \cf5 \strokec5 "copertura_logvar"\cf4 \strokec4 : frac, \cf5 \strokec5 "confermato"\cf4 \strokec4 : \cf11 \strokec11 bool\cf4 \strokec4 (ok)\})\cb1 \
+\cb3     cols = [\cf5 \strokec5 "canale"\cf4 \strokec4 , \cf5 \strokec5 "fase"\cf4 \strokec4 , \cf5 \strokec5 "onset_s"\cf4 \strokec4 , \cf5 \strokec5 "offset_s"\cf4 \strokec4 , \cf5 \strokec5 "durata_s"\cf4 \strokec4 , \cf5 \strokec5 "amp_max_mV"\cf4 \strokec4 , \cf5 \strokec5 "amp_mean_mV"\cf4 \strokec4 , \cf5 \strokec5 "area_mV_s"\cf4 \strokec4 ,\cb1 \
+\cb3             \cf5 \strokec5 "amp_max_norm"\cf4 \strokec4 , \cf5 \strokec5 "amp_mean_norm"\cf4 \strokec4 , \cf5 \strokec5 "copertura_logvar"\cf4 \strokec4 , \cf5 \strokec5 "confermato"\cf4 \strokec4 ]\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  rows: \cf8 \strokec8 return\cf4 \strokec4  pd.DataFrame(columns=cols)\cb1 \
+\cb3     \cf8 \strokec8 return\cf4 \strokec4  pd.DataFrame(rows).sort_values([\cf5 \strokec5 "canale"\cf4 \strokec4 , \cf5 \strokec5 "onset_s"\cf4 \strokec4 ]).reset_index(drop=\cf7 \strokec7 True\cf4 \strokec4 )\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 plot_ecg_prima_dopo\cf4 \strokec4 (\cf10 \strokec10 path_png\cf4 \strokec4 , \cf10 \strokec10 t\cf4 \strokec4 , \cf10 \strokec10 filt\cf4 \strokec4 , \cf10 \strokec10 clean\cf4 \strokec4 , \cf10 \strokec10 ecg_info\cf4 \strokec4 , \cf10 \strokec10 base_a\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     z0 = t[base_a]\cb1 \
+\cb3     m = (t >= z0) & (t <= z0 + \cf6 \strokec6 5\cf4 \strokec4 )\cb1 \
+\cb3     fig, ax = plt.subplots(\cf6 \strokec6 2\cf4 \strokec4 , \cf6 \strokec6 1\cf4 \strokec4 , figsize=(\cf6 \strokec6 15\cf4 \strokec4 , \cf6 \strokec6 6\cf4 \strokec4 ), sharex=\cf7 \strokec7 True\cf4 \strokec4 )\cb1 \
+\cb3     tb = ecg_info.get(\cf5 \strokec5 't_beats'\cf4 \strokec4 , np.array([]))\cb1 \
+\cb3     tb = tb[(tb >= z0) & (tb <= z0 + \cf6 \strokec6 5\cf4 \strokec4 )]\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  a, c, xf, xc \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 zip\cf4 \strokec4 (ax, CH_NAMES, filt, clean):\cb1 \
+\cb3         a.plot(t[m], xf[m], color=\cf5 \strokec5 '0.6'\cf4 \strokec4 , lw=\cf6 \strokec6 0.7\cf4 \strokec4 , label=\cf5 \strokec5 'filtrato (con ECG)'\cf4 \strokec4 )\cb1 \
+\cb3         a.plot(t[m], xc[m], color=CH_COL[c], lw=\cf6 \strokec6 0.8\cf4 \strokec4 , label=\cf5 \strokec5 'dopo rimozione ECG'\cf4 \strokec4 )\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  \cf9 \strokec9 len\cf4 \strokec4 (tb): a.plot(tb, np.full(\cf9 \strokec9 len\cf4 \strokec4 (tb), a.get_ylim()[\cf6 \strokec6 1\cf4 \strokec4 ] * \cf6 \strokec6 0.92\cf4 \strokec4 ), \cf5 \strokec5 'v'\cf4 \strokec4 , color=\cf5 \strokec5 'k'\cf4 \strokec4 , ms=\cf6 \strokec6 5\cf4 \strokec4 , label=\cf5 \strokec5 'battiti sottratti'\cf4 \strokec4 )\cb1 \
+\cb3         a.set_ylabel(\cf7 \strokec7 f\cf5 \strokec5 "\cf4 \strokec4 \{c\}\cf5 \strokec5  [mV]"\cf4 \strokec4 )\cb1 \
+\cb3         a.legend(loc=\cf5 \strokec5 'lower right'\cf4 \strokec4 , fontsize=\cf6 \strokec6 8\cf4 \strokec4 , ncol=\cf6 \strokec6 3\cf4 \strokec4 )\cb1 \
+\cb3     ax[\cf6 \strokec6 1\cf4 \strokec4 ].set_xlabel(\cf5 \strokec5 "Tempo [s]"\cf4 \strokec4 )\cb1 \
+\cb3     hr = ecg_info.get(\cf5 \strokec5 'hr_autocorr'\cf4 \strokec4 )\cb1 \
+\cb3     ax[\cf6 \strokec6 0\cf4 \strokec4 ].set_title(\cf5 \strokec5 "Rimozione ECG adattiva (zoom sulla baseline)"\cf4 \strokec4  + (\cf7 \strokec7 f\cf5 \strokec5 " - FC stimata dal segnale: \cf4 \strokec4 \{hr\cf6 \strokec6 :.0f\cf4 \strokec4 \}\cf5 \strokec5  bpm"\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  hr \cf8 \strokec8 else\cf4 \strokec4  \cf5 \strokec5 ""\cf4 \strokec4 ))\cb1 \
+\cb3     plt.tight_layout()\cb1 \
+\cb3     plt.savefig(path_png)\cb1 \
+\cb3     plt.close()\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 plot_diagnostica_detector\cf4 \strokec4 (\cf10 \strokec10 path_png\cf4 \strokec4 , \cf10 \strokec10 D\cf4 \strokec4 , \cf10 \strokec10 base\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     t = D[\cf5 \strokec5 't'\cf4 \strokec4 ]\cb1 \
+\cb3     fig, ax = plt.subplots(\cf6 \strokec6 4\cf4 \strokec4 , \cf6 \strokec6 1\cf4 \strokec4 , figsize=(\cf6 \strokec6 15\cf4 \strokec4 , \cf6 \strokec6 11\cf4 \strokec4 ), sharex=\cf7 \strokec7 True\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  j, c \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 enumerate\cf4 \strokec4 (CH_NAMES):\cb1 \
+\cb3         a_tk, a_lv = ax[\cf6 \strokec6 2\cf4 \strokec4  * j], ax[\cf6 \strokec6 2\cf4 \strokec4  * j + \cf6 \strokec6 1\cf4 \strokec4 ]\cb1 \
+\cb3         a_tk.semilogy(t, D[\cf5 \strokec5 'tr_tk'\cf4 \strokec4 ][c] + \cf6 \strokec6 1e-12\cf4 \strokec4 , color=CH_COL[c], lw=\cf6 \strokec6 0.8\cf4 \strokec4 , label=\cf7 \strokec7 f\cf5 \strokec5 '\cf4 \strokec4 \{c\}\cf5 \strokec5  TKEO lisciato'\cf4 \strokec4 )\cb1 \
+\cb3         a_tk.axhline(D[\cf5 \strokec5 'th_tk'\cf4 \strokec4 ][c], color=\cf5 \strokec5 'r'\cf4 \strokec4 , ls=\cf5 \strokec5 '--'\cf4 \strokec4 , label=\cf7 \strokec7 f\cf5 \strokec5 "soglia (k=\cf4 \strokec4 \{CFG[\cf5 \strokec5 'k_tkeo'\cf4 \strokec4 ]:g\}\cf5 \strokec5 )"\cf4 \strokec4 )\cb1 \
+\cb3         \cf8 \strokec8 for\cf4 \strokec4  a, b, frac, ok \cf7 \strokec7 in\cf4 \strokec4  D[\cf5 \strokec5 'conf'\cf4 \strokec4 ][c]:\cb1 \
+\cb3             a_tk.axvspan(t[a], t[b - \cf6 \strokec6 1\cf4 \strokec4 ], color=\cf5 \strokec5 'g'\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  ok \cf8 \strokec8 else\cf4 \strokec4  \cf5 \strokec5 'r'\cf4 \strokec4 , alpha=\cf6 \strokec6 0.25\cf4 \strokec4 , lw=\cf6 \strokec6 0\cf4 \strokec4 )\cb1 \
+\cb3         a_tk.set_title(\cf7 \strokec7 f\cf5 \strokec5 "\cf4 \strokec4 \{c\}\cf5 \strokec5  - TKEO: verde = burst confermato dalla log-varianza, rosso = scartato"\cf4 \strokec4 , fontsize=\cf6 \strokec6 10\cf4 \strokec4 )\cb1 \
+\cb3         a_lv.plot(t, D[\cf5 \strokec5 'tr_lv'\cf4 \strokec4 ][c], color=\cf5 \strokec5 '0.35'\cf4 \strokec4 , lw=\cf6 \strokec6 0.8\cf4 \strokec4 , label=\cf7 \strokec7 f\cf5 \strokec5 '\cf4 \strokec4 \{c\}\cf5 \strokec5  log-varianza'\cf4 \strokec4 )\cb1 \
+\cb3         a_lv.axhline(D[\cf5 \strokec5 'th_lv'\cf4 \strokec4 ][c], color=\cf5 \strokec5 'r'\cf4 \strokec4 , ls=\cf5 \strokec5 '--'\cf4 \strokec4 , label=\cf7 \strokec7 f\cf5 \strokec5 "soglia (k=\cf4 \strokec4 \{CFG[\cf5 \strokec5 'k_lv'\cf4 \strokec4 ]:g\}\cf5 \strokec5 )"\cf4 \strokec4 )\cb1 \
+\cb3         a_lv.fill_between(t, a_lv.get_ylim()[\cf6 \strokec6 0\cf4 \strokec4 ], D[\cf5 \strokec5 'th_lv'\cf4 \strokec4 ][c], where=D[\cf5 \strokec5 'act_lv'\cf4 \strokec4 ][c], color=\cf5 \strokec5 'tab:purple'\cf4 \strokec4 , alpha=\cf6 \strokec6 0.25\cf4 \strokec4 , lw=\cf6 \strokec6 0\cf4 \strokec4 )\cb1 \
+\cb3         a_lv.set_title(\cf7 \strokec7 f\cf5 \strokec5 "\cf4 \strokec4 \{c\}\cf5 \strokec5  - log-varianza (viola = attiva)"\cf4 \strokec4 , fontsize=\cf6 \strokec6 10\cf4 \strokec4 )\cb1 \
+\cb3         \cf8 \strokec8 for\cf4 \strokec4  a \cf7 \strokec7 in\cf4 \strokec4  (a_tk, a_lv):\cb1 \
+\cb3             a.axvspan(t[base[\cf6 \strokec6 0\cf4 \strokec4 ]], t[base[\cf6 \strokec6 1\cf4 \strokec4 ] - \cf6 \strokec6 1\cf4 \strokec4 ], color=\cf5 \strokec5 'k'\cf4 \strokec4 , alpha=\cf6 \strokec6 0.08\cf4 \strokec4 )\cb1 \
+\cb3             a.legend(loc=\cf5 \strokec5 'upper right'\cf4 \strokec4 , fontsize=\cf6 \strokec6 8\cf4 \strokec4 )\cb1 \
+\cb3     ax[\cf6 \strokec6 -1\cf4 \strokec4 ].set_xlabel(\cf5 \strokec5 "Tempo [s]  (grigio = baseline Preparation)"\cf4 \strokec4 )\cb1 \
+\cb3     plt.tight_layout()\cb1 \
+\cb3     plt.savefig(path_png)\cb1 \
+\cb3     plt.close()\cb1 \
+\
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # MAIN E REPORTING\cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # =============================================================================\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf7 \cb3 \strokec7 def\cf4 \strokec4  \cf9 \strokec9 main\cf4 \strokec4 (\cf10 \strokec10 path\cf4 \strokec4 , \cf10 \strokec10 out_dir\cf4 \strokec4 ):\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     \cf8 \strokec8 if\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  avvia_analisi: \cf8 \strokec8 return\cf4 \cb1 \strokec4 \
+\cb3     os.makedirs(out_dir, exist_ok=\cf7 \strokec7 True\cf4 \strokec4 )\cb1 \
+\cb3     log = [\cf5 \strokec5 "=== RAPPORTO ANALISI EMG COMPLETA ===\\n"\cf4 \strokec4 ]\cb1 \
+\
+\cb3     L = load_shimmer_csv(path)\cb1 \
+\cb3     t, fs = L[\cf5 \strokec5 't'\cf4 \strokec4 ], L[\cf5 \strokec5 'fs'\cf4 \strokec4 ]\cb1 \
+\cb3     log.append(\cf7 \strokec7 f\cf5 \strokec5 "Soglia: \cf4 \strokec4 \{tipo_soglia.upper()\}\cf5 \strokec5  (TKEO k=\cf4 \strokec4 \{CFG[\cf5 \strokec5 'k_tkeo'\cf4 \strokec4 ]\}\cf5 \strokec5 , log-varianza k=\cf4 \strokec4 \{CFG[\cf5 \strokec5 'k_lv'\cf4 \strokec4 ]\}\cf5 \strokec5 )"\cf4 \strokec4 )\cb1 \
+\
+\cb3     filt = [preprocess_emg(L[c], fs) \cf8 \strokec8 for\cf4 \strokec4  c \cf7 \strokec7 in\cf4 \strokec4  (\cf5 \strokec5 'ch1'\cf4 \strokec4 , \cf5 \strokec5 'ch2'\cf4 \strokec4 )]\cb1 \
+\cb3     clean, ecg_info = remove_ecg(filt, fs, CFG)\cb1 \
+\cb3     D = \cf11 \strokec11 dict\cf4 \strokec4 (t=t, fs=fs, env_n=\{\}, env_mV=\{\}, act_tk=\{\}, act_lv=\{\}, act=\{\}, tr_tk=\{\}, tr_lv=\{\},\cb1 \
+\cb3              th_tk=\{\}, th_lv=\{\}, conf=\{\})\cb1 \
+\cb3     sel_cons = (t >= taglio_iniziale_s) & (t <= fine_massimale_s)\cb1 \
+\
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  c, x \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 zip\cf4 \strokec4 (CH_NAMES, clean):\cb1 \
+\cb3         e = compute_envelope(x, fs, CFG[\cf5 \strokec5 'env_lp_hz'\cf4 \strokec4 ])\cb1 \
+\cb3         D[\cf5 \strokec5 'env_mV'\cf4 \strokec4 ][c] = e\cb1 \
+\cb3         D[\cf5 \strokec5 'env_n'\cf4 \strokec4 ][c] = e / np.percentile(e[sel_cons], CFG[\cf5 \strokec5 'norm_percentile'\cf4 \strokec4 ])\cb1 \
+\
+\cb3     base = baseline_interval(t, fs, taglio_iniziale_s, inizio_slow_s)\cb1 \
+\
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  c, x \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 zip\cf4 \strokec4 (CH_NAMES, clean):\cb1 \
+\cb3         act_tk, th_tk, tr_tk = detect_onset_tkeo(x, fs, base[:\cf6 \strokec6 2\cf4 \strokec4 ], CFG[\cf5 \strokec5 'k_tkeo'\cf4 \strokec4 ], CFG[\cf5 \strokec5 'min_dur_s'\cf4 \strokec4 ], CFG[\cf5 \strokec5 'min_gap_s'\cf4 \strokec4 ], CFG[\cf5 \strokec5 'tkeo_lp_hz'\cf4 \strokec4 ])\cb1 \
+\cb3         act_lv, th_lv, tr_lv = detect_onset_logvar(x, fs, base[:\cf6 \strokec6 2\cf4 \strokec4 ], CFG[\cf5 \strokec5 'lv_win_s'\cf4 \strokec4 ], CFG[\cf5 \strokec5 'k_lv'\cf4 \strokec4 ], CFG[\cf5 \strokec5 'min_dur_s'\cf4 \strokec4 ], CFG[\cf5 \strokec5 'min_gap_s'\cf4 \strokec4 ])\cb1 \
+\
+\cb3         \cf2 \strokec2 # la log-varianza CONFERMA i burst TKEO (tempi di onset/offset = quelli del TKEO)\cf4 \cb1 \strokec4 \
+\cb3         act_conf, conf_rows = confirm_tkeo_with_logvar(act_tk, act_lv, CFG[\cf5 \strokec5 'lv_conferma_min_frac'\cf4 \strokec4 ])\cb1 \
+\cb3         D[\cf5 \strokec5 'act_tk'\cf4 \strokec4 ][c], D[\cf5 \strokec5 'act_lv'\cf4 \strokec4 ][c], D[\cf5 \strokec5 'act'\cf4 \strokec4 ][c] = act_tk, act_lv, act_conf\cb1 \
+\cb3         D[\cf5 \strokec5 'tr_tk'\cf4 \strokec4 ][c], D[\cf5 \strokec5 'tr_lv'\cf4 \strokec4 ][c], D[\cf5 \strokec5 'th_tk'\cf4 \strokec4 ][c], D[\cf5 \strokec5 'th_lv'\cf4 \strokec4 ][c], D[\cf5 \strokec5 'conf'\cf4 \strokec4 ][c] = tr_tk, tr_lv, th_tk, th_lv, conf_rows\cb1 \
+\
+\cb3     \cf2 \strokec2 # --- blocco aggiuntivo del report: ECG, baseline, conferma ---\cf4 \cb1 \strokec4 \
+\cb3     log.append(\cf7 \strokec7 f\cf5 \strokec5 "\\n[ECG] metodo: \cf4 \strokec4 \{ecg_info[\cf5 \strokec5 'method'\cf4 \strokec4 ]\}\cf5 \strokec5 "\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  \cf5 \strokec5 'hr_autocorr'\cf4 \strokec4  \cf7 \strokec7 in\cf4 \strokec4  ecg_info:\cb1 \
+\cb3         log.append(\cf7 \strokec7 f\cf5 \strokec5 "  FC da autocorrelazione (finestre quiete): \cf4 \strokec4 \{ecg_info[\cf5 \strokec5 'hr_autocorr'\cf4 \strokec4 ]\cf6 \strokec6 :.1f\cf4 \strokec4 \}\cf5 \strokec5  bpm"\cf4 \cb1 \strokec4 \
+\cb3                    + (\cf7 \strokec7 f\cf5 \strokec5 " \cf4 \strokec4 |\cf5 \strokec5  FC dai battiti sottratti: \cf4 \strokec4 \{ecg_info[\cf5 \strokec5 'hr_bpm'\cf4 \strokec4 ]\cf6 \strokec6 :.1f\cf4 \strokec4 \}\cf5 \strokec5  bpm"\cf4 \strokec4  \cf8 \strokec8 if\cf4 \strokec4  \cf5 \strokec5 'hr_bpm'\cf4 \strokec4  \cf7 \strokec7 in\cf4 \strokec4  ecg_info \cf8 \strokec8 else\cf4 \strokec4  \cf5 \strokec5 ""\cf4 \strokec4 ))\cb1 \
+\cb3         \cf8 \strokec8 for\cf4 \strokec4  c, inf \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 zip\cf4 \strokec4 (CH_NAMES, ecg_info[\cf5 \strokec5 'per_ch'\cf4 \strokec4 ]):\cb1 \
+\cb3             \cf8 \strokec8 if\cf4 \strokec4  inf: log.append(\cf7 \strokec7 f\cf5 \strokec5 "  \cf4 \strokec4 \{c\}\cf5 \strokec5 : battiti candidati \cf4 \strokec4 \{inf[\cf5 \strokec5 'n_cand'\cf4 \strokec4 ]\}\cf5 \strokec5 , sottratti \cf4 \strokec4 \{inf[\cf5 \strokec5 'n_used'\cf4 \strokec4 ]\}\cf5 \strokec5 ; ampiezza QRS residua mediana \cf4 \strokec4 \{\cf6 \strokec6 100\cf4 \strokec4  * inf[\cf5 \strokec5 'resid'\cf4 \strokec4 ]\cf6 \strokec6 :.0f\cf4 \strokec4 \}\cf5 \strokec5 %"\cf4 \strokec4 )\cb1 \
+\cb3             \cf8 \strokec8 else\cf4 \strokec4 : log.append(\cf7 \strokec7 f\cf5 \strokec5 "  \cf4 \strokec4 \{c\}\cf5 \strokec5 : template ECG non costruibile (battiti insufficienti), segnale lasciato invariato"\cf4 \strokec4 )\cb1 \
+\cb3     log.append(\cf7 \strokec7 f\cf5 \strokec5 "\\n[Baseline] Preparation \cf4 \strokec4 \{t[base[\cf6 \strokec6 0\cf4 \strokec4 ]]\cf6 \strokec6 :.1f\cf4 \strokec4 \}\cf5 \strokec5 -\cf4 \strokec4 \{t[base[\cf6 \strokec6 1\cf4 \strokec4 ] - \cf6 \strokec6 1\cf4 \strokec4 ]\cf6 \strokec6 :.1f\cf4 \strokec4 \}\cf5 \strokec5  s (unica per tutte le fasi)"\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  c \cf7 \strokec7 in\cf4 \strokec4  CH_NAMES:\cb1 \
+\cb3         n_all = \cf9 \strokec9 len\cf4 \strokec4 (D[\cf5 \strokec5 'conf'\cf4 \strokec4 ][c]); n_ok = \cf9 \strokec9 sum\cf4 \strokec4 (r[\cf6 \strokec6 3\cf4 \strokec4 ] \cf8 \strokec8 for\cf4 \strokec4  r \cf7 \strokec7 in\cf4 \strokec4  D[\cf5 \strokec5 'conf'\cf4 \strokec4 ][c])\cb1 \
+\cb3         n_base = \cf9 \strokec9 len\cf4 \strokec4 (runs(D[\cf5 \strokec5 'act'\cf4 \strokec4 ][c][base[\cf6 \strokec6 0\cf4 \strokec4 ]:base[\cf6 \strokec6 1\cf4 \strokec4 ]]))\cb1 \
+\cb3         log.append(\cf7 \strokec7 f\cf5 \strokec5 "  \cf4 \strokec4 \{c\}\cf5 \strokec5 : soglia TKEO = \cf4 \strokec4 \{D[\cf5 \strokec5 'th_tk'\cf4 \strokec4 ][c]\cf6 \strokec6 :.3e\cf4 \strokec4 \}\cf5 \strokec5  \cf4 \strokec4 |\cf5 \strokec5  soglia log-varianza = \cf4 \strokec4 \{D[\cf5 \strokec5 'th_lv'\cf4 \strokec4 ][c]\cf6 \strokec6 :.3f\cf4 \strokec4 \}\cf5 \strokec5  \cf4 \strokec4 |\cf5 \strokec5  "\cf4 \cb1 \strokec4 \
+\cb3                    \cf7 \strokec7 f\cf5 \strokec5 "burst TKEO: \cf4 \strokec4 \{n_all\}\cf5 \strokec5 , confermati: \cf4 \strokec4 \{n_ok\}\cf5 \strokec5 , scartati: \cf4 \strokec4 \{n_all - n_ok\}\cf5 \strokec5  \cf4 \strokec4 |\cf5 \strokec5  burst finali dentro la baseline: \cf4 \strokec4 \{n_base\}\cf5 \strokec5 "\cf4 \strokec4 )\cb1 \
+\
+\cb3     \cf2 \strokec2 # --- REPORTING FASI ---\cf4 \cb1 \strokec4 \
+\cb3     res_global = run_pipeline_for_phase(\cf5 \strokec5 "COMPLESSIVO"\cf4 \strokec4 , sel_cons, D, log)\cb1 \
+\cb3     fasi_dict = \{\cb1 \
+\cb3         \cf5 \strokec5 "1. Preparation"\cf4 \strokec4 : (t >= taglio_iniziale_s) & (t < inizio_slow_s),\cb1 \
+\cb3         \cf5 \strokec5 "2. Slow"\cf4 \strokec4 : (t >= inizio_slow_s) & (t < inizio_fast_s),\cb1 \
+\cb3         \cf5 \strokec5 "3. Fast"\cf4 \strokec4 : (t >= inizio_fast_s) & (t < inizio_reactive_s),\cb1 \
+\cb3         \cf5 \strokec5 "4. Reactive"\cf4 \strokec4 : (t >= inizio_reactive_s) & (t < inizio_massimale_s),\cb1 \
+\cb3         \cf5 \strokec5 "5. Massimale"\cf4 \strokec4 : (t >= inizio_massimale_s) & (t <= fine_massimale_s)\cb1 \
+\cb3     \}\cb1 \
+\
+\cb3     phase_results = \{\}\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  p_name, sel \cf7 \strokec7 in\cf4 \strokec4  fasi_dict.items():\cb1 \
+\cb3         phase_results[p_name] = run_pipeline_for_phase(p_name, sel, D, log)\cb1 \
+\
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # PLOT 1: DIAGNOSTICA METODI\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     fig1, ax1 = plt.subplots(\cf6 \strokec6 2\cf4 \strokec4 , \cf6 \strokec6 1\cf4 \strokec4 , figsize=(\cf6 \strokec6 15\cf4 \strokec4 , \cf6 \strokec6 6\cf4 \strokec4 ), sharex=\cf7 \strokec7 True\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  a, c \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 zip\cf4 \strokec4 (ax1, CH_NAMES):\cb1 \
+\cb3         a.plot(t, D[\cf5 \strokec5 'env_n'\cf4 \strokec4 ][c], color=\cf5 \strokec5 'k'\cf4 \strokec4 , lw=\cf6 \strokec6 1\cf4 \strokec4 , alpha=\cf6 \strokec6 0.6\cf4 \strokec4 , label=\cf5 \strokec5 'Envelope'\cf4 \strokec4 )\cb1 \
+\cb3         a.fill_between(t, \cf6 \strokec6 0\cf4 \strokec4 , \cf6 \strokec6 0.33\cf4 \strokec4 , where=D[\cf5 \strokec5 'act_tk'\cf4 \strokec4 ][c], color=\cf5 \strokec5 '#1f77b4'\cf4 \strokec4 , alpha=\cf6 \strokec6 0.3\cf4 \strokec4 , label=\cf5 \strokec5 'TKEO'\cf4 \strokec4 )\cb1 \
+\cb3         a.fill_between(t, \cf6 \strokec6 0.33\cf4 \strokec4 , \cf6 \strokec6 0.66\cf4 \strokec4 , where=D[\cf5 \strokec5 'act_lv'\cf4 \strokec4 ][c], color=\cf5 \strokec5 '#ff7f0e'\cf4 \strokec4 , alpha=\cf6 \strokec6 0.3\cf4 \strokec4 , label=\cf5 \strokec5 'Log-varianza'\cf4 \strokec4 )\cb1 \
+\cb3         a.fill_between(t, \cf6 \strokec6 0\cf4 \strokec4 , \cf6 \strokec6 1.0\cf4 \strokec4 , where=D[\cf5 \strokec5 'act'\cf4 \strokec4 ][c], color=\cf5 \strokec5 'g'\cf4 \strokec4 , alpha=\cf6 \strokec6 0.4\cf4 \strokec4 , label=\cf7 \strokec7 f\cf5 \strokec5 'FINALE (\cf4 \strokec4 \{tipo_soglia\}\cf5 \strokec5 )'\cf4 \strokec4 )\cb1 \
+\cb3         a.set_title(\cf7 \strokec7 f\cf5 \strokec5 "Diagnostica - \cf4 \strokec4 \{c\}\cf5 \strokec5 "\cf4 \strokec4 , fontsize=\cf6 \strokec6 11\cf4 \strokec4 )\cb1 \
+\cb3         a.legend(loc=\cf5 \strokec5 'upper right'\cf4 \strokec4 , ncol=\cf6 \strokec6 4\cf4 \strokec4 , fontsize=\cf6 \strokec6 8\cf4 \strokec4 )\cb1 \
+\cb3     plt.tight_layout()\cb1 \
+\cb3     plt.savefig(os.path.join(out_dir, \cf5 \strokec5 "report_01_diagnostica.png"\cf4 \strokec4 ))\cb1 \
+\cb3     plt.close()\cb1 \
+\
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # PLOT 2: TIMELINE GLOBALE FASI\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     fig2, ax2 = plt.subplots(figsize=(\cf6 \strokec6 15\cf4 \strokec4 , \cf6 \strokec6 6\cf4 \strokec4 ))\cb1 \
+\cb3     ax2.plot(t, D[\cf5 \strokec5 'env_n'\cf4 \strokec4 ][\cf5 \strokec5 'CH1'\cf4 \strokec4 ], color=CH_COL[\cf5 \strokec5 'CH1'\cf4 \strokec4 ], label=\cf5 \strokec5 'CH1'\cf4 \strokec4 )\cb1 \
+\cb3     ax2.plot(t, D[\cf5 \strokec5 'env_n'\cf4 \strokec4 ][\cf5 \strokec5 'CH2'\cf4 \strokec4 ], color=CH_COL[\cf5 \strokec5 'CH2'\cf4 \strokec4 ], label=\cf5 \strokec5 'CH2'\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  sec \cf7 \strokec7 in\cf4 \strokec4  [taglio_iniziale_s, inizio_slow_s, inizio_fast_s, inizio_reactive_s, inizio_massimale_s, fine_massimale_s]:\cb1 \
+\cb3         ax2.axvline(sec, color=\cf5 \strokec5 'k'\cf4 \strokec4 , linestyle=\cf5 \strokec5 '--'\cf4 \strokec4 , alpha=\cf6 \strokec6 0.5\cf4 \strokec4 )\cb1 \
+\
+\cb3     col_map = \{\cf5 \strokec5 'solo_CH1'\cf4 \strokec4 : \cf5 \strokec5 '#1f77b4'\cf4 \strokec4 , \cf5 \strokec5 'solo_CH2'\cf4 \strokec4 : \cf5 \strokec5 '#ff7f0e'\cf4 \strokec4 , \cf5 \strokec5 'co-attivazione'\cf4 \strokec4 : \cf5 \strokec5 '#2ca02c'\cf4 \strokec4 , \cf5 \strokec5 'sequenziale'\cf4 \strokec4 : \cf5 \strokec5 '#d62728'\cf4 \strokec4 \}\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  res_global \cf7 \strokec7 and\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  res_global[\cf5 \strokec5 'patterns'\cf4 \strokec4 ].empty:\cb1 \
+\cb3         \cf8 \strokec8 for\cf4 \strokec4  _, row \cf7 \strokec7 in\cf4 \strokec4  res_global[\cf5 \strokec5 'patterns'\cf4 \strokec4 ].iterrows():\cb1 \
+\cb3             lbl = row[\cf5 \strokec5 'class'\cf4 \strokec4 ] \cf8 \strokec8 if\cf4 \strokec4  row[\cf5 \strokec5 'class'\cf4 \strokec4 ] \cf7 \strokec7 not\cf4 \strokec4  \cf7 \strokec7 in\cf4 \strokec4  ax2.get_legend_handles_labels()[\cf6 \strokec6 1\cf4 \strokec4 ] \cf8 \strokec8 else\cf4 \strokec4  \cf5 \strokec5 ""\cf4 \cb1 \strokec4 \
+\cb3             ax2.axvspan(row[\cf5 \strokec5 'start'\cf4 \strokec4 ], row[\cf5 \strokec5 'end'\cf4 \strokec4 ], color=col_map.get(row[\cf5 \strokec5 'class'\cf4 \strokec4 ], \cf5 \strokec5 'gray'\cf4 \strokec4 ), alpha=\cf6 \strokec6 0.2\cf4 \strokec4 , label=lbl)\cb1 \
+\
+\cb3     ax2.set_xlim(taglio_iniziale_s - \cf6 \strokec6 2\cf4 \strokec4 , fine_massimale_s + \cf6 \strokec6 2\cf4 \strokec4 )\cb1 \
+\cb3     ax2.set_title(\cf5 \strokec5 "Timeline Generale e Classificazione"\cf4 \strokec4 )\cb1 \
+\cb3     ax2.legend(loc=\cf5 \strokec5 'upper right'\cf4 \strokec4 )\cb1 \
+\cb3     plt.tight_layout()\cb1 \
+\cb3     plt.savefig(os.path.join(out_dir, \cf5 \strokec5 "report_02_timeline.png"\cf4 \strokec4 ))\cb1 \
+\cb3     plt.close()\cb1 \
+\
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # PLOT 3: SINERGIE (NMF) BAR CHART\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     valid_nmf = \{k: v \cf8 \strokec8 for\cf4 \strokec4  k, v \cf7 \strokec7 in\cf4 \strokec4  phase_results.items() \cf8 \strokec8 if\cf4 \strokec4  v \cf7 \strokec7 and\cf4 \strokec4  v[\cf5 \strokec5 'weights'\cf4 \strokec4 ] \cf7 \strokec7 is\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  \cf7 \strokec7 None\cf4 \strokec4 \}\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  valid_nmf:\cb1 \
+\cb3         fig3, ax3 = plt.subplots(figsize=(\cf6 \strokec6 10\cf4 \strokec4 , \cf6 \strokec6 5\cf4 \strokec4 ))\cb1 \
+\cb3         labels = \cf11 \strokec11 list\cf4 \strokec4 (valid_nmf.keys())\cb1 \
+\cb3         w1 = [valid_nmf[k][\cf5 \strokec5 'weights'\cf4 \strokec4 ][\cf6 \strokec6 0\cf4 \strokec4 ][\cf6 \strokec6 0\cf4 \strokec4 ] \cf8 \strokec8 for\cf4 \strokec4  k \cf7 \strokec7 in\cf4 \strokec4  labels]\cb1 \
+\cb3         w2 = [valid_nmf[k][\cf5 \strokec5 'weights'\cf4 \strokec4 ][\cf6 \strokec6 0\cf4 \strokec4 ][\cf6 \strokec6 1\cf4 \strokec4 ] \cf8 \strokec8 for\cf4 \strokec4  k \cf7 \strokec7 in\cf4 \strokec4  labels]\cb1 \
+\cb3         x = np.arange(\cf9 \strokec9 len\cf4 \strokec4 (labels))\cb1 \
+\
+\cb3         ax3.bar(x - \cf6 \strokec6 0.2\cf4 \strokec4 , w1, \cf6 \strokec6 0.4\cf4 \strokec4 , label=\cf5 \strokec5 'CH1'\cf4 \strokec4 , color=CH_COL[\cf5 \strokec5 'CH1'\cf4 \strokec4 ], edgecolor=\cf5 \strokec5 'k'\cf4 \strokec4 )\cb1 \
+\cb3         ax3.bar(x + \cf6 \strokec6 0.2\cf4 \strokec4 , w2, \cf6 \strokec6 0.4\cf4 \strokec4 , label=\cf5 \strokec5 'CH2'\cf4 \strokec4 , color=CH_COL[\cf5 \strokec5 'CH2'\cf4 \strokec4 ], edgecolor=\cf5 \strokec5 'k'\cf4 \strokec4 )\cb1 \
+\cb3         ax3.set_xticks(x); ax3.set_xticklabels(labels)\cb1 \
+\cb3         ax3.set_title(\cf5 \strokec5 "Pesi Sinergici (NMF) per Fase Fisiologica"\cf4 \strokec4 )\cb1 \
+\cb3         ax3.set_ylabel(\cf5 \strokec5 "Peso Estratto"\cf4 \strokec4 )\cb1 \
+\cb3         ax3.legend()\cb1 \
+\cb3         plt.tight_layout()\cb1 \
+\cb3         plt.savefig(os.path.join(out_dir, \cf5 \strokec5 "report_03_sinergie.png"\cf4 \strokec4 ))\cb1 \
+\cb3         plt.close()\cb1 \
+\
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # PLOT 4: ZOOM ONSET PER FASE\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # Creiamo un subplot per ogni fase per vedere chiaramente la latenza\cf4 \cb1 \strokec4 \
+\cb3     fasi_da_plottare = [k \cf8 \strokec8 for\cf4 \strokec4  k, v \cf7 \strokec7 in\cf4 \strokec4  phase_results.items() \cf8 \strokec8 if\cf4 \strokec4  v \cf7 \strokec7 and\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  v[\cf5 \strokec5 'patterns'\cf4 \strokec4 ].empty]\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  fasi_da_plottare:\cb1 \
+\cb3         fig4, ax4 = plt.subplots(\cf9 \strokec9 len\cf4 \strokec4 (fasi_da_plottare), \cf6 \strokec6 1\cf4 \strokec4 , figsize=(\cf6 \strokec6 15\cf4 \strokec4 , \cf6 \strokec6 3\cf4 \strokec4  * \cf9 \strokec9 len\cf4 \strokec4 (fasi_da_plottare)), sharex=\cf7 \strokec7 False\cf4 \strokec4 )\cb1 \
+\cb3         \cf8 \strokec8 if\cf4 \strokec4  \cf9 \strokec9 len\cf4 \strokec4 (fasi_da_plottare) == \cf6 \strokec6 1\cf4 \strokec4 : ax4 = [ax4]\cb1 \
+\
+\cb3         \cf8 \strokec8 for\cf4 \strokec4  a, p_name \cf7 \strokec7 in\cf4 \strokec4  \cf9 \strokec9 zip\cf4 \strokec4 (ax4, fasi_da_plottare):\cb1 \
+\cb3             sel = phase_results[p_name][\cf5 \strokec5 'sel'\cf4 \strokec4 ]\cb1 \
+\cb3             t_p = t[sel]\cb1 \
+\cb3             e1, e2 = D[\cf5 \strokec5 'env_n'\cf4 \strokec4 ][\cf5 \strokec5 'CH1'\cf4 \strokec4 ][sel], D[\cf5 \strokec5 'env_n'\cf4 \strokec4 ][\cf5 \strokec5 'CH2'\cf4 \strokec4 ][sel]\cb1 \
+\cb3             a1, a2 = D[\cf5 \strokec5 'act'\cf4 \strokec4 ][\cf5 \strokec5 'CH1'\cf4 \strokec4 ][sel], D[\cf5 \strokec5 'act'\cf4 \strokec4 ][\cf5 \strokec5 'CH2'\cf4 \strokec4 ][sel]\cb1 \
+\
+\cb3             a.plot(t_p, e1, color=CH_COL[\cf5 \strokec5 'CH1'\cf4 \strokec4 ], label=\cf5 \strokec5 'CH1'\cf4 \strokec4 )\cb1 \
+\cb3             a.plot(t_p, e2, color=CH_COL[\cf5 \strokec5 'CH2'\cf4 \strokec4 ], label=\cf5 \strokec5 'CH2'\cf4 \strokec4 )\cb1 \
+\
+\cb3             \cf2 \strokec2 # Sfondo per indicare dove sono attivi i muscoli\cf4 \cb1 \strokec4 \
+\cb3             a.fill_between(t_p, \cf6 \strokec6 0\cf4 \strokec4 , e1, where=a1, color=CH_COL[\cf5 \strokec5 'CH1'\cf4 \strokec4 ], alpha=\cf6 \strokec6 0.3\cf4 \strokec4 )\cb1 \
+\cb3             a.fill_between(t_p, \cf6 \strokec6 0\cf4 \strokec4 , e2, where=a2, color=CH_COL[\cf5 \strokec5 'CH2'\cf4 \strokec4 ], alpha=\cf6 \strokec6 0.3\cf4 \strokec4 )\cb1 \
+\
+\cb3             a.set_title(\cf7 \strokec7 f\cf5 \strokec5 "Zoom Onset - Fase: \cf4 \strokec4 \{p_name\}\cf5 \strokec5 "\cf4 \strokec4 )\cb1 \
+\cb3             a.set_ylim(\cf6 \strokec6 0\cf4 \strokec4 , \cf9 \strokec9 max\cf4 \strokec4 (e1.\cf9 \strokec9 max\cf4 \strokec4 (), e2.\cf9 \strokec9 max\cf4 \strokec4 ()) * \cf6 \strokec6 1.2\cf4 \strokec4  + \cf6 \strokec6 0.1\cf4 \strokec4 )\cb1 \
+\cb3             a.grid(\cf7 \strokec7 True\cf4 \strokec4 , linestyle=\cf5 \strokec5 ':'\cf4 \strokec4 , alpha=\cf6 \strokec6 0.5\cf4 \strokec4 )\cb1 \
+\
+\cb3         plt.tight_layout()\cb1 \
+\cb3         plt.savefig(os.path.join(out_dir, \cf5 \strokec5 "report_04_zoom_onset.png"\cf4 \strokec4 ))\cb1 \
+\cb3         plt.show() \cf2 \strokec2 # Mostro solo questo a schermo per non intasare Colab, gli altri sono salvati\cf4 \cb1 \strokec4 \
+\
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # REPORT AGGIUNTIVI (v4): grafici ECG e diagnostica, CSV onset, sezione testo\cf4 \cb1 \strokec4 \
+\cb3     \cf2 \strokec2 # =========================================================================\cf4 \cb1 \strokec4 \
+\cb3     plot_ecg_prima_dopo(os.path.join(out_dir, \cf5 \strokec5 "report_05_ecg_prima_dopo.png"\cf4 \strokec4 ), t, filt, clean, ecg_info, base[\cf6 \strokec6 0\cf4 \strokec4 ])\cb1 \
+\cb3     plot_diagnostica_detector(os.path.join(out_dir, \cf5 \strokec5 "report_06_diagnostica_soglie.png"\cf4 \strokec4 ), D, base[:\cf6 \strokec6 2\cf4 \strokec4 ])\cb1 \
+\
+\cb3     tab = build_burst_table(D, fasi_dict)\cb1 \
+\cb3     tab.to_csv(os.path.join(out_dir, \cf5 \strokec5 "onset_offset_per_canale.csv"\cf4 \strokec4 ), index=\cf7 \strokec7 False\cf4 \strokec4 , float_format=\cf5 \strokec5 "%.4f"\cf4 \strokec4 )\cb1 \
+\cb3     pat = [res_global[\cf5 \strokec5 'patterns'\cf4 \strokec4 ].assign(fase=\cf5 \strokec5 "COMPLESSIVO"\cf4 \strokec4 )] \cf8 \strokec8 if\cf4 \strokec4  res_global \cf7 \strokec7 and\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  res_global[\cf5 \strokec5 'patterns'\cf4 \strokec4 ].empty \cf8 \strokec8 else\cf4 \strokec4  []\cb1 \
+\cb3     pat += [r[\cf5 \strokec5 'patterns'\cf4 \strokec4 ].assign(fase=n) \cf8 \strokec8 for\cf4 \strokec4  n, r \cf7 \strokec7 in\cf4 \strokec4  phase_results.items() \cf8 \strokec8 if\cf4 \strokec4  r \cf7 \strokec7 and\cf4 \strokec4  \cf7 \strokec7 not\cf4 \strokec4  r[\cf5 \strokec5 'patterns'\cf4 \strokec4 ].empty]\cb1 \
+\cb3     \cf8 \strokec8 if\cf4 \strokec4  pat: pd.concat(pat).to_csv(os.path.join(out_dir, \cf5 \strokec5 "episodi_pattern.csv"\cf4 \strokec4 ), index=\cf7 \strokec7 False\cf4 \strokec4 , float_format=\cf5 \strokec5 "%.4f"\cf4 \strokec4 )\cb1 \
+\
+\cb3     log.append(\cf5 \strokec5 "\\n=== ONSET PER CANALE (burst TKEO confermati dalla log-varianza) ==="\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 for\cf4 \strokec4  p_name \cf7 \strokec7 in\cf4 \strokec4  fasi_dict:\cb1 \
+\cb3         \cf8 \strokec8 for\cf4 \strokec4  c \cf7 \strokec7 in\cf4 \strokec4  CH_NAMES:\cb1 \
+\cb3             sub = tab[(tab[\cf5 \strokec5 'canale'\cf4 \strokec4 ] == c) & (tab[\cf5 \strokec5 'fase'\cf4 \strokec4 ] == p_name) & (tab[\cf5 \strokec5 'confermato'\cf4 \strokec4 ])]\cb1 \
+\cb3             \cf8 \strokec8 if\cf4 \strokec4  sub.empty:\cb1 \
+\cb3                 log.append(\cf7 \strokec7 f\cf5 \strokec5 "  \cf4 \strokec4 \{p_name\}\cf5 \strokec5  \cf4 \strokec4 |\cf5 \strokec5  \cf4 \strokec4 \{c\}\cf5 \strokec5 : nessun burst"\cf4 \strokec4 )\cb1 \
+\cb3             \cf8 \strokec8 else\cf4 \strokec4 :\cb1 \
+\cb3                 ons = \cf5 \strokec5 ", "\cf4 \strokec4 .join(\cf7 \strokec7 f\cf5 \strokec5 "\cf4 \strokec4 \{v\cf6 \strokec6 :.2f\cf4 \strokec4 \}\cf5 \strokec5 "\cf4 \strokec4  \cf8 \strokec8 for\cf4 \strokec4  v \cf7 \strokec7 in\cf4 \strokec4  sub[\cf5 \strokec5 'onset_s'\cf4 \strokec4 ])\cb1 \
+\cb3                 log.append(\cf7 \strokec7 f\cf5 \strokec5 "  \cf4 \strokec4 \{p_name\}\cf5 \strokec5  \cf4 \strokec4 |\cf5 \strokec5  \cf4 \strokec4 \{c\}\cf5 \strokec5 : \cf4 \strokec4 \{\cf9 \strokec9 len\cf4 \strokec4 (sub)\}\cf5 \strokec5  burst, durata media \cf4 \strokec4 \{sub[\cf5 \strokec5 'durata_s'\cf4 \strokec4 ].mean()\cf6 \strokec6 :.3f\cf4 \strokec4 \}\cf5 \strokec5  s, "\cf4 \cb1 \strokec4 \
+\cb3                            \cf7 \strokec7 f\cf5 \strokec5 "ampiezza media \cf4 \strokec4 \{sub[\cf5 \strokec5 'amp_mean_mV'\cf4 \strokec4 ].mean()\cf6 \strokec6 :.4f\cf4 \strokec4 \}\cf5 \strokec5  mV \cf4 \strokec4 |\cf5 \strokec5  onset (s): \cf4 \strokec4 \{ons\}\cf5 \strokec5 "\cf4 \strokec4 )\cb1 \
+\cb3     log.append(\cf5 \strokec5 "\\nFile aggiuntivi: report_05_ecg_prima_dopo.png, report_06_diagnostica_soglie.png, "\cf4 \cb1 \strokec4 \
+\cb3                \cf5 \strokec5 "onset_offset_per_canale.csv (tutti i burst TKEO, anche quelli scartati: colonna 'confermato'), "\cf4 \cb1 \strokec4 \
+\cb3                \cf5 \strokec5 "episodi_pattern.csv"\cf4 \strokec4 )\cb1 \
+\
+\cb3     \cf2 \strokec2 # === STAMPA E SALVATAGGIO TESTO ===\cf4 \cb1 \strokec4 \
+\cb3     testo = \cf5 \strokec5 "\\n"\cf4 \strokec4 .join(log)\cb1 \
+\cb3     \cf9 \strokec9 print\cf4 \strokec4 (\cf5 \strokec5 "\\n"\cf4 \strokec4  + \cf5 \strokec5 "="\cf4 \strokec4 *\cf6 \strokec6 60\cf4 \strokec4  + \cf5 \strokec5 "\\n"\cf4 \strokec4  + testo + \cf5 \strokec5 "\\n"\cf4 \strokec4  + \cf5 \strokec5 "="\cf4 \strokec4 *\cf6 \strokec6 60\cf4 \strokec4  + \cf5 \strokec5 "\\n"\cf4 \strokec4 )\cb1 \
+\cb3     \cf8 \strokec8 with\cf4 \strokec4  \cf9 \strokec9 open\cf4 \strokec4 (os.path.join(out_dir, \cf5 \strokec5 "report_testuale.txt"\cf4 \strokec4 ), \cf5 \strokec5 "w"\cf4 \strokec4 ) \cf8 \strokec8 as\cf4 \strokec4  f: f.write(testo)\cb1 \
+\cb3     \cf9 \strokec9 print\cf4 \strokec4 (\cf7 \strokec7 f\cf5 \strokec5 "Tutti i report (1 testo + 4 grafici) sono stati salvati nella cartella '\cf4 \strokec4 \{out_dir\}\cf5 \strokec5 '"\cf4 \strokec4 )\cb1 \
+\cb3     \cf9 \strokec9 print\cf4 \strokec4 (\cf5 \strokec5 "Report aggiuntivi: 2 grafici (ECG, diagnostica soglie) + 2 CSV (onset/offset per canale, episodi)"\cf4 \strokec4 )\cb1 \
+\
+\pard\pardeftab720\sl380\partightenfactor0
+\cf8 \cb3 \strokec8 if\cf4 \strokec4  \cf10 \strokec10 __name__\cf4 \strokec4  == \cf5 \strokec5 "__main__"\cf4 \strokec4 :\cb1 \
+\pard\pardeftab720\sl380\partightenfactor0
+\cf4 \cb3     main(path, out_dir)\cb1 \
+}
